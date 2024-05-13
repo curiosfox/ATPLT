@@ -1,0 +1,3065 @@
+diff --git a/./action.cc b/../c11tester_evaluation/c11tester/action.cc
+index d8ce567..777eb44 100644
+--- a/./action.cc
++++ b/../c11tester_evaluation/c11tester/action.cc
+@@ -43,7 +43,12 @@ ModelAction::ModelAction(action_type_t type, memory_order order, void *loc,
+ 	type(type),
+ 	order(order),
+ 	original_order(order),
+-	seq_number(ACTION_INITIAL_CLOCK)
++	seq_number(ACTION_INITIAL_CLOCK),
++	hbmo_cv(NULL),
++	is_tail(true),
++	chain_head(NULL),
++	rmw_chain_id(0),
++	chain_event_order(0)
+ {
+ 	/* References to NULL atomic variables can end up here */
+ 	ASSERT(loc || type == ATOMIC_FENCE || type == ATOMIC_NOP);
+@@ -75,7 +80,12 @@ ModelAction::ModelAction(action_type_t type, memory_order order, uint64_t value,
+ 	type(type),
+ 	order(order),
+ 	original_order(order),
+-	seq_number(ACTION_INITIAL_CLOCK)
++	seq_number(ACTION_INITIAL_CLOCK),
++	hbmo_cv(NULL),
++	is_tail(true),
++	chain_head(NULL),
++	rmw_chain_id(0),
++	chain_event_order(0)
+ {
+ 	Thread *t = thread_current();
+ 	this->tid = t!= NULL ? t->get_id() : -1;
+@@ -106,7 +116,12 @@ ModelAction::ModelAction(action_type_t type, memory_order order, void *loc,
+ 	type(type),
+ 	order(order),
+ 	original_order(order),
+-	seq_number(ACTION_INITIAL_CLOCK)
++	seq_number(ACTION_INITIAL_CLOCK),
++	hbmo_cv(NULL),
++	is_tail(true),
++	chain_head(NULL),
++	rmw_chain_id(0),
++	chain_event_order(0)
+ {
+ 	/* References to NULL atomic variables can end up here */
+ 	ASSERT(loc);
+@@ -140,7 +155,12 @@ ModelAction::ModelAction(action_type_t type, const char * position, memory_order
+ 	type(type),
+ 	order(order),
+ 	original_order(order),
+-	seq_number(ACTION_INITIAL_CLOCK)
++	seq_number(ACTION_INITIAL_CLOCK),
++	hbmo_cv(NULL),
++	is_tail(true),
++	chain_head(NULL),
++	rmw_chain_id(0),
++	chain_event_order(0)
+ {
+ 	/* References to NULL atomic variables can end up here */
+ 	ASSERT(loc);
+@@ -175,7 +195,12 @@ ModelAction::ModelAction(action_type_t type, const char * position, memory_order
+ 	type(type),
+ 	order(order),
+ 	original_order(order),
+-	seq_number(ACTION_INITIAL_CLOCK)
++	seq_number(ACTION_INITIAL_CLOCK),
++	hbmo_cv(NULL),
++	is_tail(true),
++	chain_head(NULL),
++	rmw_chain_id(0),
++	chain_event_order(0)
+ {
+ 	/* References to NULL atomic variables can end up here */
+ 	ASSERT(loc || type == ATOMIC_FENCE);
+@@ -356,12 +381,15 @@ bool ModelAction::is_annotation() const
+ 
+ bool ModelAction::is_relaxed() const
+ {
+-	return order == std::memory_order_relaxed;
++	return false;
++	//return order == std::memory_order_relaxed;
+ }
+ 
+ bool ModelAction::is_acquire() const
+ {
+ 	switch (order) {
++	case std::memory_order_release:
++	case std::memory_order_relaxed:
+ 	case std::memory_order_acquire:
+ 	case std::memory_order_acq_rel:
+ 	case std::memory_order_seq_cst:
+@@ -374,6 +402,8 @@ bool ModelAction::is_acquire() const
+ bool ModelAction::is_release() const
+ {
+ 	switch (order) {
++	case std::memory_order_relaxed:
++	case std::memory_order_acquire:
+ 	case std::memory_order_release:
+ 	case std::memory_order_acq_rel:
+ 	case std::memory_order_seq_cst:
+@@ -385,7 +415,8 @@ bool ModelAction::is_release() const
+ 
+ bool ModelAction::is_seqcst() const
+ {
+-	return order == std::memory_order_seq_cst;
++	//return order == std::memory_order_seq_cst;
++	return false;
+ }
+ 
+ bool ModelAction::same_var(const ModelAction *act) const
+diff --git a/./action.h b/../c11tester_evaluation/c11tester/action.h
+index 5357fe4..523a9f0 100644
+--- a/./action.h
++++ b/../c11tester_evaluation/c11tester/action.h
+@@ -196,7 +196,22 @@ public:
+ 	void set_thread_operand(Thread *th) { thread_operand = th; }
+ 
+ 	void setActionRef(sllnode<ModelAction *> *ref) { action_ref = ref; }
+-	sllnode<ModelAction *> * getActionRef() { return action_ref; }
++	sllnode<ModelAction *> * getActionRef() const { return action_ref; }
++
++
++
++	/**
++	 * New additions.
++	 *
++	 */
++	ClockVector * get_hbmo() {return hbmo_cv; }
++	void set_hbmo(ClockVector * clock) { hbmo_cv = clock; }
++	uint get_rmw_chain_id() { return rmw_chain_id; }
++	void set_rmw_chain_id(uint id) { rmw_chain_id = id; }
++	uint get_chain_event_order() { return chain_event_order; }
++	void set_chain_event_order(uint order) { chain_event_order = order; }
++	bool get_is_tail() { return is_tail; }
++	void set_is_tail(bool flag) { is_tail = flag; }
+ 
+ 	SNAPSHOTALLOC
+ private:
+@@ -256,6 +271,28 @@ private:
+ 	 * should represent the action's position in the execution order.
+ 	 */
+ 	modelclock_t seq_number;
++
++
++
++	/**
++	 * New additions.
++	 *
++	 */
++
++	/** @brief HBMO clock vector. */
++	ClockVector *hbmo_cv;
++
++	/** @brief Head of the RMW chain. */
++	ModelAction * chain_head;
++
++	/** @brief ID of the RMW chain. */
++	uint rmw_chain_id;
++
++	/** @brief Order of the event in the RMW chain. */
++	uint chain_event_order;
++
++	/** @brief Flag denoting whether the event is the tail of the RMW chain. */
++	bool is_tail;
+ };
+ 
+ #endif	/* __ACTION_H__ */
+diff --git a/./clockvector.cc b/../c11tester_evaluation/c11tester/clockvector.cc
+index ba5d1f4..8fd1081 100644
+--- a/./clockvector.cc
++++ b/../c11tester_evaluation/c11tester/clockvector.cc
+@@ -6,6 +6,7 @@
+ #include "clockvector.h"
+ #include "common.h"
+ #include "threads-model.h"
++#include "set"
+ 
+ 
+ /**
+@@ -28,6 +29,7 @@ ClockVector::ClockVector(ClockVector *parent, const ModelAction *act)
+ 
+ 	if (act != NULL)
+ 		clock[id_to_int(act->get_tid())] = act->get_seq_number();
++	last_rf_seq_nr = 0;
+ }
+ 
+ /** @brief Destructor */
+@@ -58,10 +60,76 @@ bool ClockVector::merge(const ClockVector *cv)
+ 			clock[i] = cv->clock[i];
+ 			changed = true;
+ 		}
++	return changed;
++}
+ 
++
++/**
++ * Merge a clock vector into this vector, using a pairwise comparison. The
++ * resulting vector length will be the maximum length of the two being merged.
++ * @param cv is the ClockVector being merged into this vector.
++ */
++std::set<int> ClockVector::merge_changed_indexes(const ClockVector *cv)
++{
++	ASSERT(cv != NULL);
++	if (cv->num_threads > num_threads) {
++		clock = (modelclock_t *)snapshot_realloc(clock, cv->num_threads * sizeof(modelclock_t));
++		for (int i = num_threads;i < cv->num_threads;i++)
++			clock[i] = 0;
++		num_threads = cv->num_threads;
++	}
++
++	std::set<int> changed_indexes;
++	for (int i = 0;i < cv->num_threads;i++)
++		if (cv->clock[i] > clock[i]) {
++			clock[i] = cv->clock[i];
++			changed_indexes.insert(i);
++		}
++	return changed_indexes;
++}
++
++
++/**
++ * Merge a clock vector into this vector, using a pairwise comparison. The
++ * resulting vector length will be the maximum length of the two being merged.
++ * @param cv is the ClockVector being merged into this vector.
++ */
++bool ClockVector::merge_single(int tid, int epoch)
++{
++	bool changed = false;
++	if (epoch > clock[tid]) {
++		clock[tid] = epoch;
++		changed = true;
++	}
+ 	return changed;
+ }
+ 
++
++/**
++ *
++ */
++bool ClockVector::greater_or_equal_excl_local_clock(const ClockVector *cv, const unsigned int tid)
++{
++	ASSERT(cv != NULL);
++	if (cv->num_threads > num_threads) {
++		clock = (modelclock_t *)snapshot_realloc(clock, cv->num_threads * sizeof(modelclock_t));
++		for (int i = num_threads;i < cv->num_threads;i++)
++			clock[i] = 0;
++		num_threads = cv->num_threads;
++	}
++
++	/* Element-wise maximum */
++	for (int i = 0;i < cv->num_threads;i++) {
++		if (i == tid)
++			continue;
++		if (clock[i] < cv->clock[i]) {
++			return false;
++		}
++	}
++	return true;
++}
++
++
+ /**
+  * Merge a clock vector into this vector, using a pairwise comparison. The
+  * resulting vector length will be the maximum length of the two being merged.
+@@ -84,7 +152,6 @@ bool ClockVector::minmerge(const ClockVector *cv)
+ 			clock[i] = cv->clock[i];
+ 			changed = true;
+ 		}
+-
+ 	return changed;
+ }
+ 
+@@ -127,3 +194,26 @@ void ClockVector::print() const
+ 	for (i = 0;i < num_threads;i++)
+ 		model_print("%2u%s", clock[i], (i == num_threads - 1) ? ")\n" : ", ");
+ }
++
++
++bool ClockVector::is_null() const
++{
++	if (num_threads == 0)
++		return true;
++	else {
++		for (int i = 0;i < num_threads;i++)
++			if (clock[i] > 0)
++				return false;
++	}
++	return true;
++}
++
++void ClockVector::update_last_rf(int rf_seq_nr)
++{
++	last_rf_seq_nr = rf_seq_nr;
++}
++
++int ClockVector::get_size() const
++{
++	return num_threads;
++}
+\ No newline at end of file
+diff --git a/./clockvector.h b/../c11tester_evaluation/c11tester/clockvector.h
+index 1a36a39..11862fc 100644
+--- a/./clockvector.h
++++ b/../c11tester_evaluation/c11tester/clockvector.h
+@@ -8,6 +8,7 @@
+ #include "mymemory.h"
+ #include "modeltypes.h"
+ #include "classlist.h"
++#include "set"
+ 
+ class ClockVector {
+ public:
+@@ -16,6 +17,13 @@ public:
+ 	bool merge(const ClockVector *cv);
+ 	bool minmerge(const ClockVector *cv);
+ 	bool synchronized_since(const ModelAction *act) const;
++	std::set<int> merge_changed_indexes(const ClockVector *cv);
++	bool merge_single(int tid, int epoch);
++	bool greater_or_equal_excl_local_clock(const ClockVector *cv, const unsigned int tid);
++	bool is_null() const;
++	int get_size() const;
++	void update_last_rf(int rf_seq_nr);
++	int last_rf_seq_nr;
+ 
+ 	void print() const;
+ 	modelclock_t getClock(thread_id_t thread);
+diff --git a/./config.h b/../c11tester_evaluation/c11tester/config.h
+index 1d0f59f..2ad495e 100644
+--- a/./config.h
++++ b/../c11tester_evaluation/c11tester/config.h
+@@ -19,6 +19,10 @@
+  *  printed summary.*/
+ #define SUPPORT_MOD_ORDER_DUMP 0
+ 
++#define ORIGINAL_IMPL
++#define OPTIMIZED_IMPL
++#define TIME_IT
++
+ /** Do we have a 48 bit virtual address (64 bit machine) or 32 bit addresses.
+  * Set to 1 for 48-bit, 0 for 32-bit. */
+ #ifndef BIT48
+@@ -63,7 +67,7 @@
+ //#define memory_order_volatile_load memory_order_relaxed
+ //#define memory_order_volatile_store memory_order_relaxed
+ 
+-//#define COLLECT_STAT
++#define COLLECT_STAT
+ #define REPORT_DATA_RACES
+ 
+ #endif
+diff --git a/./execution.cc b/../c11tester_evaluation/c11tester/execution.cc
+index d2efaba..7f526d4 100644
+--- a/./execution.cc
++++ b/../c11tester_evaluation/c11tester/execution.cc
+@@ -3,6 +3,7 @@
+ #include <new>
+ #include <stdarg.h>
+ #include <errno.h>
++#include <chrono>
+ 
+ #include "model.h"
+ #include "execution.h"
+@@ -17,6 +18,8 @@
+ #include "history.h"
+ #include "fuzzer.h"
+ #include "newfuzzer.h"
++#include "set"
++
+ 
+ #ifdef COLLECT_STAT
+ static unsigned int atomic_load_count = 0;
+@@ -79,6 +82,8 @@ ModelExecution::ModelExecution(ModelChecker *m, Scheduler *scheduler) :
+ 	thrd_last_fence_release(),
+ 	priv(new struct model_snapshot_members ()),
+ 	mo_graph(new CycleGraph()),
++	hb_writes(new SnapVector<ModelAction *>()),
++	chain_id_to_head(),
+ #ifdef NEWFUZZER
+ 	fuzzer(new NewFuzzer()),
+ #else
+@@ -163,10 +168,10 @@ static inline void record_atomic_stats(ModelAction * act)
+ 		atomic_store_count++;
+ 		break;
+ 	case ATOMIC_RMW:
+-		atomic_load_count++;
++		atomic_rmw_count++;
+ 		break;
+ 	case ATOMIC_READ:
+-		atomic_rmw_count++;
++		atomic_load_count++;
+ 		break;
+ 	case ATOMIC_FENCE:
+ 		atomic_fence_count++;
+@@ -224,7 +229,7 @@ unsigned int ModelExecution::get_num_threads() const
+ /** @return a sequence number for a new ModelAction */
+ modelclock_t ModelExecution::get_next_seq_num()
+ {
+-	return ++priv->used_sequence_numbers;
++	return ++++priv->used_sequence_numbers;
+ }
+ 
+ /** @return a sequence number for a new ModelAction */
+@@ -379,17 +384,213 @@ ModelAction * ModelExecution::convertNonAtomicStore(void * location) {
+ 	thread_id_t storethread;
+ 	getStoreThreadAndClock(location, &storethread, &storeclock);
+ 	setAtomicStoreFlag(location);
+-	ModelAction * act = new ModelAction(NONATOMIC_WRITE, memory_order_relaxed, location, value, get_thread(storethread));
+-	act->set_seq_number(storeclock);
++	ModelAction * act = new ModelAction(NONATOMIC_WRITE, memory_order_release, location, value, get_thread(storethread));
++	act->set_seq_number(storeclock+1);
+ 	add_normal_write_to_lists(act);
++	ModelAction *last_act = get_last_action(act->get_tid());
++	if (last_act != NULL)
++		act->get_cv()->merge(last_act->get_cv());
++
++	#if defined(ORIGINAL_IMPL)
++		#ifdef TIME_IT
++			clock_t start_orig = clock();
++		#endif
++		w_modification_order(act);
++		#ifdef TIME_IT
++			clock_t end_orig = clock();
++			orig_time += end_orig - start_orig;
++		#endif
++	#endif
++
++	#ifdef OPTIMIZED_IMPL
++		#ifdef TIME_IT
++			clock_t start_opt = clock();
++		#endif
++		ModelAction *prev_write = get_last_wr_thr_obj(act->get_tid(), act->get_location());
++		process_write_opt(act, prev_write, false);
++		act->set_hbmo(new ClockVector(act->get_cv(), act));
++		if (prev_write != NULL) {
++			act->get_hbmo()->merge(prev_write->get_hbmo());
++		}
++		#ifdef TIME_IT
++			clock_t end_opt = clock();
++			opt_time += end_opt - start_opt;
++		#endif
++	#endif
+ 	add_write_to_lists(act);
+-	w_modification_order(act);
++
+ #ifdef NEWFUZZER
+ 	model->get_history()->process_action(act, act->get_tid());
+ #endif
+ 	return act;
+ }
+ 
++
++void ModelExecution::po_propagate_hbmo(ModelAction * act, int tid, int clock, int read_seq_nr) {
++	sllnode<ModelAction *> * rit;
++	for (rit = act->getActionRef()->getNext(); rit != NULL;rit=rit->getNext()) {
++		ModelAction * po_write = rit->getVal();
++		bool changed = false;
++
++		if (po_write->get_seq_number() > clock)
++			break;
++
++		if ((act->get_rmw_chain_id() != 0 && act->get_rmw_chain_id() == po_write->get_rmw_chain_id())) {
++			continue;
++		} else {
++			changed = po_write->get_hbmo()->merge_single(tid, clock);
++			po_write->get_hbmo()->update_last_rf(read_seq_nr);
++		}
++		if (!changed && !po_write->is_rmw())
++			break;
++	}
++}
++
++void ModelExecution::po_propagate_hbmo(ModelAction * act, int read_seq_nr) {
++	sllnode<ModelAction *> * rit;
++	std::set<int> merged_rmw_chains;
++	for (rit = act->getActionRef()->getNext(); rit != NULL;rit=rit->getNext()) {
++		ModelAction * po_write = rit->getVal();
++		bool changed = false;
++		if (((act->get_rmw_chain_id() != 0 && act->get_rmw_chain_id() == po_write->get_rmw_chain_id())) ||
++			(po_write->get_rmw_chain_id() != 0 && merged_rmw_chains.find(po_write->get_rmw_chain_id()) != merged_rmw_chains.end())) {
++			continue;
++		} else {
++			changed = po_write->get_hbmo()->merge(act->get_hbmo());
++			po_write->get_hbmo()->update_last_rf(read_seq_nr);
++		}
++		if (!changed && !po_write->is_rmw())
++			break;
++	}
++}
++
++
++bool ModelExecution::r_modification_order_opt(ModelAction *curr, ModelAction *rf, bool *canprune, ModelAction * prev_same_thread) {
++	int curr_tid = curr->get_tid();
++	int read_tid = rf->get_tid();
++	int rf_write_clock = rf->get_hbmo()->getClock(read_tid);
++
++	if (rf->get_rmw_chain_id() != 0 && !rf->is_rmw()) {
++		rf_write_clock = rf->get_seq_number();
++	}
++
++	SnapVector<action_list_t> *thrd_lists = obj_thrd_map.get(curr->get_location());
++	ASSERT(curr->is_read());
++
++	#if !defined(ORIGINAL_IMPL)
++		/* Need to ensure thrd_lists is big enough because we have not added the curr actions yet.  */
++		if ((int)thrd_lists->size() <= curr_tid) {
++			uint oldsize = thrd_lists->size();
++			thrd_lists->resize(priv->next_thread_id);
++			for(uint i = oldsize;i < priv->next_thread_id;i++)
++				new (&(*thrd_lists)[i]) action_list_t();
++			fixup_action_list(thrd_lists);
++		}
++	#endif
++
++	ClockVector * maximal_hbmo_clocks = new ClockVector();
++
++	bool maximal_predecessor_threads[thrd_lists->size()] = {false};
++
++	for (unsigned int i = 0; i < hb_writes->size(); i++) {
++		ModelAction * last_hb_write = (*hb_writes)[i];
++
++		if (last_hb_write != rf) {
++			if (rf->get_rmw_chain_id() != 0 && last_hb_write->get_rmw_chain_id() != 0) {
++				if (rf->get_rmw_chain_id() == last_hb_write->get_rmw_chain_id()) {
++					if (last_hb_write->get_chain_event_order() > rf->get_chain_event_order())
++						return false;
++					else
++						continue;
++				}
++			}
++
++			if (last_hb_write->get_hbmo()->getClock(read_tid) >= rf_write_clock)
++				return false;
++
++			if (rf->is_rmw()) {
++				ModelAction *rmw_chain_head = get_rmw_chain_head(rf);
++				ASSERT(!(rmw_chain_head==NULL));
++				if (!rmw_chain_head->equals(rf)) {
++					int rmw_chain_head_clock = rmw_chain_head->get_hbmo()->getClock(rmw_chain_head->get_tid());
++					if (last_hb_write->get_hbmo()->getClock(rmw_chain_head->get_tid()) >= rmw_chain_head->get_seq_number())
++						return false;
++				}
++			}
++
++			if (last_hb_write == get_last_wr_thr_obj(last_hb_write->get_tid(), last_hb_write->get_location()))
++				maximal_predecessor_threads[last_hb_write->get_tid()] = true;
++			maximal_hbmo_clocks->merge(last_hb_write->get_hbmo());
++		} else {
++			if (last_hb_write == get_last_wr_thr_obj(last_hb_write->get_tid(), last_hb_write->get_location())) {
++				maximal_predecessor_threads[last_hb_write->get_tid()] = true;
++			}
++		}
++	}
++
++	if (!maximal_hbmo_clocks->is_null()) {
++		std::set<unsigned int> L = {};
++		for (unsigned int x = 0; x < maximal_hbmo_clocks->get_size(); x++) {
++			if (!maximal_predecessor_threads[x] && maximal_hbmo_clocks->getClock(x) > curr->get_cv()->getClock(x)) {
++				L.insert(x);
++			}
++		}
++
++		std::set<unsigned int>::iterator it;
++		std::set<unsigned int> tempL;
++		bool reiterate;
++		do {
++			reiterate = false;
++			for (it = L.begin(); it != L.end(); ++it) {
++				if (maximal_hbmo_clocks->getClock(read_tid) >= rf_write_clock)
++					return false;
++
++				int last_hb_write_pred_clock = maximal_hbmo_clocks->getClock(*it);
++				if (last_hb_write_pred_clock <= curr->get_cv()->getClock(*it))
++					continue;
++
++				ModelAction * last_hb_write_pred = getLWB(*it, curr->get_tid(), last_hb_write_pred_clock, curr->get_location());
++				if (last_hb_write_pred != NULL) {
++					std::set<int> changed_indexes = maximal_hbmo_clocks->merge_changed_indexes(last_hb_write_pred->get_hbmo());
++
++					std::set<int>::iterator it2;
++					for (it2 = changed_indexes.begin(); it2 != changed_indexes.end(); ++it2) {
++						if (*it2 != *it && !maximal_predecessor_threads[*it2])
++							tempL.insert(*it2);
++						if (*it2 == read_tid) {
++							if (maximal_hbmo_clocks->getClock(read_tid) >= rf_write_clock)
++								return false;
++						}
++					}
++				}
++			}
++
++			if (tempL.size() > 0) {
++				L = tempL;
++				tempL.clear();
++				reiterate = true;
++			}
++		} while(reiterate);
++	}
++
++	rf->get_hbmo()->merge(maximal_hbmo_clocks);
++	rf->get_hbmo()->update_last_rf(curr->get_seq_number());
++
++	action_list_t *list = &(*thrd_lists)[curr->get_tid()];
++	auto rit = list->end();
++	if (rit != NULL) {
++		if (rit->getVal()->is_read() && rit->getVal()->get_reads_from()->equals(rf)) {
++			#ifdef ORIGINAL_IMPL
++				ASSERT(canprune);
++			#endif
++			*canprune = true;
++		}
++	}
++	return true;
++}
++
++
++
+ /**
+  * Processes a read model action.
+  * @param curr is the read model action to process.
+@@ -400,41 +601,142 @@ bool ModelExecution::process_read(ModelAction *curr, SnapVector<ModelAction *> *
+ {
+ 	SnapVector<ModelAction *> * priorset = new SnapVector<ModelAction *>();
+ 	bool hasnonatomicstore = hasNonAtomicStore(curr->get_location());
++
+ 	if (hasnonatomicstore) {
+ 		ModelAction * nonatomicstore = convertNonAtomicStore(curr->get_location());
+ 		rf_set->push_back(nonatomicstore);
++
++		#if defined(OPTIMIZED_IMPL)
++			#ifdef TIME_IT
++				clock_t start = clock();
++			#endif
++
++			if (curr->get_cv()->synchronized_since(nonatomicstore)) {
++				bool same_thread_hb_write_exists = false;
++
++				for(unsigned int i = 0; i < hb_writes->size(); i++) {
++					ModelAction * last_hb_write = (*hb_writes)[i];
++					if (last_hb_write->get_tid() == nonatomicstore->get_tid()) {
++						same_thread_hb_write_exists = true;
++						if (nonatomicstore->get_seq_number() >= last_hb_write->get_seq_number()) {
++							(*hb_writes)[i] = nonatomicstore;
++						}
++						break;
++					}
++				}
++				if (!same_thread_hb_write_exists) {
++					hb_writes->push_back(nonatomicstore);
++				}
++			}
++
++			#ifdef TIME_IT
++				clock_t finish = clock();
++				opt_time += finish-start;
++			#endif
++		#endif
+ 	}
+ 
+-	// Remove writes that violate read modification order
+-	/*
+-	   uint i = 0;
+-	   while (i < rf_set->size()) {
+-	        ModelAction * rf = (*rf_set)[i];
+-	        if (!r_modification_order(curr, rf, NULL, NULL, true)) {
+-	                (*rf_set)[i] = rf_set->back();
+-	                rf_set->pop_back();
+-	        } else
+-	                i++;
+-	   }*/
++	ModelAction * prev_same_thread = NULL;
++
++	#if defined(ORIGINAL_IMPL) && defined(OPTIMIZED_IMPL)
++		SnapVector<action_list_t> *thrd_lists = obj_thrd_map.get(curr->get_location());
++		/* Need to ensure thrd_lists is big enough because we have not added the curr actions yet.  */
++		if ((int)thrd_lists->size() <= curr->get_tid()) {
++			uint oldsize = thrd_lists->size();
++			thrd_lists->resize(priv->next_thread_id);
++			for(uint i = oldsize;i < priv->next_thread_id;i++)
++				new (&(*thrd_lists)[i]) action_list_t();
++			fixup_action_list(thrd_lists);
++		}
++	#endif
+ 
+ 	while(true) {
+ 		int index = fuzzer->selectWrite(curr, rf_set);
+-
+ 		ModelAction *rf = (*rf_set)[index];
+-
+ 		ASSERT(rf);
+ 		bool canprune = false;
+-		if (r_modification_order(curr, rf, priorset, &canprune)) {
+-			for(unsigned int i=0;i<priorset->size();i++) {
+-				mo_graph->addEdge((*priorset)[i], rf);
+-			}
++
++		#ifdef ORIGINAL_IMPL
++			#ifdef TIME_IT
++				clock_t start = clock();
++			#endif
++
++			bool ret_value1 = r_modification_order(curr, rf, priorset, &canprune);
++
++			#ifdef TIME_IT
++				clock_t finish = clock();
++				orig_time += finish-start;
++			#endif
++		#endif
++
++		#ifdef OPTIMIZED_IMPL
++			#ifdef TIME_IT
++				clock_t start_opt = clock();
++			#endif
++			bool ret_value2 = r_modification_order_opt(curr, rf, &canprune, prev_same_thread);
++			#ifdef TIME_IT
++				clock_t finish_opt = clock();
++				opt_time += finish_opt-start_opt;
++			#endif
++		#endif
++
++		bool ret_value;
++		#ifdef OPTIMIZED_IMPL
++			ret_value = ret_value2;
++		#endif
++		#ifdef ORIGINAL_IMPL
++			ret_value = ret_value1;
++		#endif
++
++		if (ret_value) {
++			#ifdef OPTIMIZED_IMPL
++				#ifdef TIME_IT
++					clock_t start_opt_prop_overhead = clock();
++				#endif
++				if (rf->is_rmw()) {
++					if (rf->get_tid() != get_rmw_chain_head(rf)->get_tid())
++						po_propagate_hbmo(get_rmw_chain_head(rf), curr->get_seq_number());
++					else
++						po_propagate_hbmo(rf, curr->get_seq_number());
++				} else {
++					po_propagate_hbmo(rf, curr->get_seq_number());
++				}
++				#ifdef TIME_IT
++					clock_t finish_opt_prop_overhead = clock();
++					opt_time += finish_opt_prop_overhead-start_opt_prop_overhead;
++				#endif
++			#endif
++
++			#ifdef ORIGINAL_IMPL
++				#ifdef TIME_IT
++					clock_t start_mo_overhead = clock();
++				#endif
++
++				for(unsigned int i=0;i<priorset->size();i++) {
++					if (rf->is_rmw()) {
++						if ((*priorset)[i]->get_rmw_chain_id() == rf->get_rmw_chain_id()) {
++							mo_graph->addEdge((*priorset)[i], rf);
++						} else {
++							mo_graph->addEdge((*priorset)[i], get_rmw_chain_head(rf));
++						}
++					} else {
++						mo_graph->addEdge((*priorset)[i], rf);
++					}
++				}
++				#ifdef TIME_IT
++					clock_t finish_mo_overhead = clock();
++					orig_time += finish_mo_overhead-start_mo_overhead;
++				#endif
++			#endif
+ 			read_from(curr, rf);
+ 			get_thread(curr)->set_return_value(rf->get_write_value());
+ 			delete priorset;
+ 			//Update acquire fence clock vector
+ 			ClockVector * hbcv = get_hb_from_write(rf);
++
+ 			if (hbcv != NULL)
+ 				get_thread(curr)->get_acq_fence_cv()->merge(hbcv);
++
+ 			return canprune && (curr->get_type() == ATOMIC_READ);
+ 		}
+ 		priorset->clear();
+@@ -443,6 +745,73 @@ bool ModelExecution::process_read(ModelAction *curr, SnapVector<ModelAction *> *
+ 	}
+ }
+ 
++ModelAction * ModelExecution::getLWB(unsigned int target_thread, unsigned int pointer_thread, unsigned int hb, void * addr) {
++	SnapVector<simple_action_list_t> *thrd_lists = obj_wr_thrd_map.get(addr);
++	if (thrd_lists != NULL && target_thread < thrd_lists->size()) {
++		/* Iterate over actions in thread, starting from most recent */
++		simple_action_list_t *list = &(*thrd_lists)[target_thread];
++
++		if (list->size() > 0) {
++			ModelAction *first_write = list->front();
++			if (!(first_write->get_seq_number() <= hb))
++				return NULL;
++		} else
++			return NULL;
++
++		ModelAction * pointer_event = NULL;
++		if (pointers.size() <= target_thread)
++			pointers.resize(target_thread+1, std::unordered_map<void *, std::vector<ModelAction *>>());
++
++		if (pointers[target_thread].find(addr) == pointers[target_thread].end() ||
++			pointers[target_thread][addr].size() <= pointer_thread) {
++			pointers[target_thread].insert(std::make_pair(addr, std::vector<ModelAction *>()));
++		} else
++			pointer_event = pointers[target_thread][addr][pointer_thread];
++
++		if (pointer_event == NULL) {
++			sllnode<ModelAction *> * rit;
++			for (rit = list->end();rit != NULL;rit=rit->getPrev()) {
++				ModelAction *act = rit->getVal();
++				if (act->get_seq_number() <= hb) {
++					pointer_event = act;
++					break;
++				}
++			}
++		} else {
++			if (!(pointer_event->get_seq_number() <= hb)) {
++				sllnode<ModelAction *> * rit;
++				for (rit = pointer_event->getActionRef();rit != NULL;rit=rit->getPrev()) {
++					ModelAction *act = rit->getVal();
++					if (act->get_seq_number() <= hb) {
++						pointer_event = act;
++						break;
++					}
++				}
++			} else {
++				if (pointer_event->get_seq_number() == hb)
++				return pointer_event;
++
++				sllnode<ModelAction *> * rit;
++				for (rit = pointer_event->getActionRef();rit != NULL;rit=rit->getNext()) {
++					ModelAction *act = rit->getVal();
++					if (act->get_seq_number() <= hb)
++						pointer_event = act;
++					else
++						break;
++				}
++			}
++		}
++
++		if (pointers[target_thread][addr].size() <= pointer_thread)
++			pointers[target_thread][addr].resize(pointer_thread+1, 0);
++
++		pointers[target_thread][addr][pointer_thread] = pointer_event;
++
++		return pointer_event;
++	}
++	return NULL;
++}
++
+ /**
+  * Processes a lock, trylock, or unlock model action.  @param curr is
+  * the read model action to process.
+@@ -584,6 +953,59 @@ bool ModelExecution::process_mutex(ModelAction *curr)
+ 	return false;
+ }
+ 
++
++/**
++ * @brief Get the last write action performed by a particular Thread
++ * @param tid The thread ID of the Thread in question
++ * @return The last action in the thread
++ */
++ModelAction * ModelExecution::get_last_wr_thr_obj(thread_id_t tid, void * location) const
++{
++	SnapVector<simple_action_list_t> *thrd_lists = obj_wr_thrd_map.get(location);
++	if (thrd_lists != NULL && tid < thrd_lists->size()) {
++		simple_action_list_t *list = &(*thrd_lists)[tid];
++		if (list->size() > 0)
++			return list->end()->getVal();
++	}
++	return NULL;
++}
++
++
++/**
++ * @brief Get the last write performed by a particular Thread on a given location
++ * @param tid The thread ID of the Thread in question
++ * @param location The location in question
++ * @return The last action in the thread
++ */
++ModelAction * ModelExecution::get_last_event_thr_obj(thread_id_t tid, void * location) const
++{
++	SnapVector<action_list_t> *thrd_lists = obj_thrd_map.get(location);
++	if (thrd_lists != NULL && tid < thrd_lists->size()) {
++		action_list_t *list = &(*thrd_lists)[tid];
++		sllnode<ModelAction *> * rit;
++		if (list->size() > 0)
++			return list->end()->getVal();
++	}
++	return NULL;
++}
++
++
++void ModelExecution::process_write_opt(ModelAction *curr, ModelAction *prevWrite, bool set_return_value)
++{
++	if (curr->is_rmw()) {
++		curr->get_hbmo()->merge(curr->get_cv());
++	} else {
++		curr->set_hbmo(new ClockVector(curr->get_cv(), curr));
++	}
++
++	if (prevWrite != NULL) {
++		curr->get_hbmo()->merge(prevWrite->get_hbmo());
++	}
++
++	if (set_return_value)
++		get_thread(curr)->set_return_value(VALUE_NONE);
++}
++
+ /**
+  * Process a write ModelAction
+  * @param curr The ModelAction to process
+@@ -851,7 +1273,17 @@ ModelAction * ModelExecution::check_current_action(ModelAction *curr)
+ 	bool canprune = false;
+ 	/* Build may_read_from set for newly-created actions */
+ 	if (curr->is_read() && newly_explored) {
+-		rf_set = build_may_read_from(curr);
++
++		#if defined(OPTIMIZED_IMPL) && !defined(ORIGINAL_IMPL)
++			rf_set = build_may_read_from_opt(curr);
++		#endif
++		#if defined(OPTIMIZED_IMPL) && defined(ORIGINAL_IMPL)
++			build_may_read_from_opt(curr);
++		#endif
++		#ifdef ORIGINAL_IMPL
++			rf_set = build_may_read_from(curr);
++		#endif
++
+ 		canprune = process_read(curr, rf_set);
+ 		delete rf_set;
+ 	} else
+@@ -859,19 +1291,40 @@ ModelAction * ModelExecution::check_current_action(ModelAction *curr)
+ 
+ 	/* Add the action to lists if not the second part of a rmw */
+ 	if (newly_explored) {
+-#ifdef COLLECT_STAT
+-		record_atomic_stats(curr);
+-#endif
+ 		add_action_to_lists(curr, canprune);
+ 	}
+-
+-	if (curr->is_write())
+-		add_write_to_lists(curr);
++	#ifdef COLLECT_STAT
++		record_atomic_stats(curr);
++	#endif
+ 
+ 	process_thread_action(curr);
+ 
++	if (curr->is_write()) {
++		#if defined(ORIGINAL_IMPL)
++			#ifdef TIME_IT
++				clock_t start_orig = clock();
++			#endif
++			process_write(curr);
++			#ifdef TIME_IT
++				clock_t end_orig = clock();
++				orig_time += end_orig - start_orig;
++			#endif
++		#endif
++
++		#ifdef OPTIMIZED_IMPL
++			#ifdef TIME_IT
++				clock_t start_opt = clock();
++			#endif
++			ModelAction *prev_write = get_last_wr_thr_obj(curr->get_tid(), curr->get_location());
++			process_write_opt(curr, prev_write, true);
++			#ifdef TIME_IT
++				clock_t finish_opt = clock();
++				opt_time += finish_opt - start_opt;
++			#endif
++		#endif
++	}
+ 	if (curr->is_write())
+-		process_write(curr);
++		add_write_to_lists(curr);
+ 
+ 	if (curr->is_fence())
+ 		process_fence(curr);
+@@ -882,13 +1335,76 @@ ModelAction * ModelExecution::check_current_action(ModelAction *curr)
+ 	return curr;
+ }
+ 
++ModelAction * ModelExecution::get_rmw_chain_head(ModelAction *act) {
++	uint chain_id = act->get_rmw_chain_id();
++	if (chain_id == 0)
++		return NULL;
++	else {
++		return chain_id_to_head[chain_id];
++	}
++}
++
++void ModelExecution::set_rmw_chain_head(uint chain_id, ModelAction *act) {
++	if (chain_id_to_head.size() <= chain_id)
++		chain_id_to_head.resize(chain_id*2, NULL);
++	chain_id_to_head[chain_id] = act;
++}
++
++ModelAction * ModelExecution::process_rmw_opt(ModelAction *lastread) {
++	lastread->set_hbmo(lastread->get_reads_from()->get_hbmo());
++
++	if (lastread->get_reads_from()->is_rmw()) {
++		lastread->set_rmw_chain_id(lastread->get_reads_from()->get_rmw_chain_id());
++		lastread->set_chain_event_order(lastread->get_reads_from()->get_chain_event_order() + 1);
++	} else {
++		lastread->get_reads_from()->set_chain_event_order(0);
++		lastread->set_chain_event_order(1);
++	}
++	if (lastread->get_tid() != get_rmw_chain_head(lastread)->get_tid()) {
++		po_propagate_hbmo(get_rmw_chain_head(lastread), lastread->get_seq_number());
++	}
++
++	lastread->get_reads_from()->set_is_tail(false);
++	return lastread;
++}
++
+ /** Close out a RMWR by converting previous RMWR into a RMW or READ. */
+ ModelAction * ModelExecution::process_rmw(ModelAction *act) {
+ 	ModelAction *lastread = get_last_action(act->get_tid());
+ 	lastread->process_rmw(act);
+-	if (act->is_rmw()) {
+-		mo_graph->addRMWEdge(lastread->get_reads_from(), lastread);
++
++	if (act->is_rmw() && !lastread->get_reads_from()->is_rmw()) {
++		rmw_chain_count++;
++		lastread->get_reads_from()->set_rmw_chain_id(rmw_chain_count);
++		lastread->set_rmw_chain_id(rmw_chain_count);
++		set_rmw_chain_head(rmw_chain_count, lastread->get_reads_from());
+ 	}
++
++	#if defined(ORIGINAL_IMPL)
++		#ifdef TIME_IT
++			clock_t start_orig = clock();
++		#endif
++		if (act->is_rmw()) {
++			mo_graph->addRMWEdge(lastread->get_reads_from(), lastread);
++		}
++		#ifdef TIME_IT
++			clock_t finish_orig = clock();
++			orig_time += finish_orig-start_orig;
++		#endif
++	#endif
++
++	#ifdef OPTIMIZED_IMPL
++		#ifdef TIME_IT
++			clock_t start_opt = clock();
++		#endif
++		if (act->is_rmw()) {
++			process_rmw_opt(lastread);
++		}
++		#ifdef TIME_IT
++			clock_t finish_opt = clock();
++			opt_time += finish_opt - start_opt;
++		#endif
++	#endif
+ 	return lastread;
+ }
+ 
+@@ -919,44 +1435,49 @@ bool ModelExecution::r_modification_order(ModelAction *curr, const ModelAction *
+ 	ASSERT(curr->is_read());
+ 
+ 	/* Last SC fence in the current thread */
+-	ModelAction *last_sc_fence_local = get_last_seq_cst_fence(curr->get_tid(), NULL);
++	//ModelAction *last_sc_fence_local = get_last_seq_cst_fence(curr->get_tid(), NULL);
+ 
+ 	int tid = curr->get_tid();
+ 
+-	/* Need to ensure thrd_lists is big enough because we have not added the curr actions yet.  */
+-	if ((int)thrd_lists->size() <= tid) {
+-		uint oldsize = thrd_lists->size();
+-		thrd_lists->resize(priv->next_thread_id);
+-		for(uint i = oldsize;i < priv->next_thread_id;i++)
+-			new (&(*thrd_lists)[i]) action_list_t();
++	#if !defined(OPTIMIZED_IMPL)
++		/* Need to ensure thrd_lists is big enough because we have not added the curr actions yet.  */
++		if ((int)thrd_lists->size() <= tid) {
++			uint oldsize = thrd_lists->size();
++			thrd_lists->resize(priv->next_thread_id);
++			for(uint i = oldsize;i < priv->next_thread_id;i++)
++				new (&(*thrd_lists)[i]) action_list_t();
++
++			fixup_action_list(thrd_lists);
++		}
++	#endif
+ 
+-		fixup_action_list(thrd_lists);
+-	}
+ 
+ 	ModelAction *prev_same_thread = NULL;
+ 	/* Iterate over all threads */
+ 	for (unsigned int i = 0;i < thrd_lists->size();i++, tid = (((unsigned int)(tid+1)) == thrd_lists->size()) ? 0 : tid + 1) {
+ 		/* Last SC fence in thread tid */
+-		ModelAction *last_sc_fence_thread_local = NULL;
+-		if (i != 0)
+-			last_sc_fence_thread_local = get_last_seq_cst_fence(int_to_id(tid), NULL);
++		// ModelAction *last_sc_fence_thread_local = NULL;
++		// if (i != 0)
++		// 	last_sc_fence_thread_local = get_last_seq_cst_fence(int_to_id(tid), NULL);
+ 
+-		/* Last SC fence in thread tid, before last SC fence in current thread */
+-		ModelAction *last_sc_fence_thread_before = NULL;
+-		if (last_sc_fence_local)
+-			last_sc_fence_thread_before = get_last_seq_cst_fence(int_to_id(tid), last_sc_fence_local);
++		// /* Last SC fence in thread tid, before last SC fence in current thread */
++		// ModelAction *last_sc_fence_thread_before = NULL;
++		// if (last_sc_fence_local)
++		// 	last_sc_fence_thread_before = get_last_seq_cst_fence(int_to_id(tid), last_sc_fence_local);
+ 
+ 		//Only need to iterate if either hb has changed for thread in question or SC fence after last operation...
+-		if (prev_same_thread != NULL &&
+-				(prev_same_thread->get_cv()->getClock(tid) == curr->get_cv()->getClock(tid)) &&
+-				(last_sc_fence_thread_local == NULL || *last_sc_fence_thread_local < *prev_same_thread)) {
++		 if (prev_same_thread != NULL && (prev_same_thread->get_cv()->getClock(tid) == curr->get_cv()->getClock(tid))) { //&&
++		// 		(last_sc_fence_thread_local == NULL || *last_sc_fence_thread_local < *prev_same_thread)) {
+ 			continue;
++		// }
+ 		}
+ 
+ 		/* Iterate over actions in thread, starting from most recent */
+ 		action_list_t *list = &(*thrd_lists)[tid];
+ 		sllnode<ModelAction *> * rit;
++		int r_mod_iter_count = 0;
+ 		for (rit = list->end();rit != NULL;rit=rit->getPrev()) {
++			r_mod_iter_count++;
+ 			ModelAction *act = rit->getVal();
+ 
+ 			/* Skip curr */
+@@ -970,32 +1491,32 @@ bool ModelExecution::r_modification_order(ModelAction *curr, const ModelAction *
+ 					continue;
+ 			}
+ 
+-			if (act->is_write()) {
+-				/* C++, Section 29.3 statement 5 */
+-				if (curr->is_seqcst() && last_sc_fence_thread_local &&
+-						*act < *last_sc_fence_thread_local) {
+-					if (mo_graph->checkReachable(rf, act))
+-						return false;
+-					priorset->push_back(act);
+-					break;
+-				}
+-				/* C++, Section 29.3 statement 4 */
+-				else if (act->is_seqcst() && last_sc_fence_local &&
+-								 *act < *last_sc_fence_local) {
+-					if (mo_graph->checkReachable(rf, act))
+-						return false;
+-					priorset->push_back(act);
+-					break;
+-				}
+-				/* C++, Section 29.3 statement 6 */
+-				else if (last_sc_fence_thread_before &&
+-								 *act < *last_sc_fence_thread_before) {
+-					if (mo_graph->checkReachable(rf, act))
+-						return false;
+-					priorset->push_back(act);
+-					break;
+-				}
+-			}
++			// if (act->is_write()) {
++			// 	/* C++, Section 29.3 statement 5 */
++			// 	if (curr->is_seqcst() && last_sc_fence_thread_local &&
++			// 			*act < *last_sc_fence_thread_local) {
++			// 		if (mo_graph->checkReachable(rf, act))
++			// 			return false;
++			// 		priorset->push_back(act);
++			// 		break;
++			// 	}
++			// 	/* C++, Section 29.3 statement 4 */
++			// 	else if (act->is_seqcst() && last_sc_fence_local &&
++			// 					 *act < *last_sc_fence_local) {
++			// 		if (mo_graph->checkReachable(rf, act))
++			// 			return false;
++			// 		priorset->push_back(act);
++			// 		break;
++			// 	}
++			// 	/* C++, Section 29.3 statement 6 */
++			// 	else if (last_sc_fence_thread_before &&
++			// 					 *act < *last_sc_fence_thread_before) {
++			// 		if (mo_graph->checkReachable(rf, act))
++			// 			return false;
++			// 		priorset->push_back(act);
++			// 		break;
++			// 	}
++			// }
+ 
+ 			/*
+ 			 * Include at most one act per-thread that "happens
+@@ -1003,20 +1524,24 @@ bool ModelExecution::r_modification_order(ModelAction *curr, const ModelAction *
+ 			 */
+ 			if (act->happens_before(curr)) {
+ 				if (i==0) {
+-					if (last_sc_fence_local == NULL ||
+-							(*last_sc_fence_local < *act)) {
++					//if (last_sc_fence_local == NULL ||
++					//		(*last_sc_fence_local < *act)) {
+ 						prev_same_thread = act;
+-					}
++					//}
+ 				}
+ 				if (act->is_write()) {
+-					if (mo_graph->checkReachable(rf, act))
++					if (mo_graph->checkReachable(rf, act)) {
+ 						return false;
++					}
++
+ 					priorset->push_back(act);
+ 				} else {
+ 					ModelAction *prevrf = act->get_reads_from();
+ 					if (!prevrf->equals(rf)) {
+-						if (mo_graph->checkReachable(rf, prevrf))
++						if (mo_graph->checkReachable(rf, prevrf)) {
+ 							return false;
++						}
++
+ 						priorset->push_back(prevrf);
+ 					} else {
+ 						if (act->get_tid() == curr->get_tid()) {
+@@ -1064,26 +1589,26 @@ void ModelExecution::w_modification_order(ModelAction *curr)
+ 
+ 	SnapList<ModelAction *> edgeset;
+ 
+-	if (curr->is_seqcst()) {
+-		/* We have to at least see the last sequentially consistent write,
+-		         so we are initialized. */
+-		ModelAction *last_seq_cst = get_last_seq_cst_write(curr);
+-		if (last_seq_cst != NULL) {
+-			edgeset.push_back(last_seq_cst);
+-		}
+-		//update map for next query
+-		obj_last_sc_map.put(curr->get_location(), curr);
+-	}
++	// if (curr->is_seqcst()) {
++	// 	/* We have to at least see the last sequentially consistent write,
++	// 	         so we are initialized. */
++	// 	ModelAction *last_seq_cst = get_last_seq_cst_write(curr);
++	// 	if (last_seq_cst != NULL) {
++	// 		edgeset.push_back(last_seq_cst);
++	// 	}
++	// 	//update map for next query
++	// 	obj_last_sc_map.put(curr->get_location(), curr);
++	// }
+ 
+ 	/* Last SC fence in the current thread */
+-	ModelAction *last_sc_fence_local = get_last_seq_cst_fence(curr->get_tid(), NULL);
++	//ModelAction *last_sc_fence_local = get_last_seq_cst_fence(curr->get_tid(), NULL);
+ 
+ 	/* Iterate over all threads */
+ 	for (i = 0;i < thrd_lists->size();i++) {
+ 		/* Last SC fence in thread i, before last SC fence in current thread */
+-		ModelAction *last_sc_fence_thread_before = NULL;
+-		if (last_sc_fence_local && int_to_id((int)i) != curr->get_tid())
+-			last_sc_fence_thread_before = get_last_seq_cst_fence(int_to_id(i), last_sc_fence_local);
++		//ModelAction *last_sc_fence_thread_before = NULL;
++		//if (last_sc_fence_local && int_to_id((int)i) != curr->get_tid())
++		//	last_sc_fence_thread_before = get_last_seq_cst_fence(int_to_id(i), last_sc_fence_local);
+ 
+ 		/* Iterate over actions in thread, starting from most recent */
+ 		action_list_t *list = &(*thrd_lists)[i];
+@@ -1112,11 +1637,11 @@ void ModelExecution::w_modification_order(ModelAction *curr)
+ 			}
+ 
+ 			/* C++, Section 29.3 statement 7 */
+-			if (last_sc_fence_thread_before && act->is_write() &&
+-					*act < *last_sc_fence_thread_before) {
+-				edgeset.push_back(act);
+-				break;
+-			}
++			// if (last_sc_fence_thread_before && act->is_write() &&
++			// 		*act < *last_sc_fence_thread_before) {
++			// 	edgeset.push_back(act);
++			// 	break;
++			// }
+ 
+ 			/*
+ 			 * Include at most one act per-thread that "happens
+@@ -1453,6 +1978,9 @@ bool valequals(uint64_t val1, uint64_t val2, int size) {
+  */
+ SnapVector<ModelAction *> *  ModelExecution::build_may_read_from(ModelAction *curr)
+ {
++	#ifdef TIME_IT
++		clock_t start = clock();
++	#endif
+ 	SnapVector<simple_action_list_t> *thrd_lists = obj_wr_thrd_map.get(curr->get_location());
+ 	unsigned int i;
+ 	ASSERT(curr->is_read());
+@@ -1466,13 +1994,17 @@ SnapVector<ModelAction *> *  ModelExecution::build_may_read_from(ModelAction *cu
+ 
+ 	/* Iterate over all threads */
+ 	if (thrd_lists != NULL)
++
+ 		for (i = 0;i < thrd_lists->size();i++) {
+ 			/* Iterate over actions in thread, starting from most recent */
+ 			simple_action_list_t *list = &(*thrd_lists)[i];
+ 			sllnode<ModelAction *> * rit;
++
+ 			for (rit = list->end();rit != NULL;rit=rit->getPrev()) {
+ 				ModelAction *act = rit->getVal();
+ 
++				ASSERT(act->is_write());
++
+ 				if (act == curr)
+ 					continue;
+ 
+@@ -1507,11 +2039,111 @@ SnapVector<ModelAction *> *  ModelExecution::build_may_read_from(ModelAction *cu
+ 			}
+ 		}
+ 
+-	if (DBG_ENABLED()) {
+-		model_print("Reached read action:\n");
+-		curr->print();
+-		model_print("End printing read_from_past\n");
++	#ifdef TIME_IT
++		clock_t end = clock();
++		orig_time += end-start;
++	#endif
++	return rf_set;
++}
++
++/**
++ * Build up an initial set of all past writes that this 'read' action may read
++ * from, as well as any previously-observed future values that must still be valid.
++ *
++ * @param curr is the current ModelAction that we are exploring; it must be a
++ * 'read' operation.
++ */
++SnapVector<ModelAction *> *  ModelExecution::build_may_read_from_opt(ModelAction *curr)
++{
++	#ifdef TIME_IT
++		clock_t start = clock();
++	#endif
++	#if defined(OPTIMIZED_IMPL)
++		hb_writes = new SnapVector<ModelAction *>(thread_map.size());
++	#endif
++
++	SnapVector<simple_action_list_t> *thrd_lists = obj_wr_thrd_map.get(curr->get_location());
++	ASSERT(curr->is_read());
++
++	ModelAction *last_sc_write = NULL;
++
++	if (curr->is_seqcst())
++		last_sc_write = get_last_seq_cst_write(curr);
++
++	SnapVector<ModelAction *> * rf_set = new SnapVector<ModelAction *>();
++	int tid;
++	unsigned int i;
++
++	ModelAction * prev_same_thread = get_last_event_thr_obj(curr->get_tid(), curr->get_location());
++	if (prev_same_thread != NULL) {
++		if (prev_same_thread->is_write())
++			prev_same_thread = NULL;
++		else
++			prev_same_thread = prev_same_thread->get_reads_from();
+ 	}
++
++	/* Iterate over all threads */
++	if (thrd_lists != NULL) {
++		tid = curr->get_tid() < thrd_lists->size() ? curr->get_tid() : 0;
++
++	    for (i = 0;i < thrd_lists->size();i++, tid = (((unsigned int)(tid+1)) == thrd_lists->size()) ? 0 : tid + 1) {
++			/* Iterate over actions in thread, starting from most recent */
++			simple_action_list_t *list = &(*thrd_lists)[tid];
++
++			sllnode<ModelAction *> * rit;
++
++			int iter_count = 0;
++			for (rit = list->end();rit != NULL;rit=rit->getPrev()) {
++				iter_count++;
++				ModelAction *act = rit->getVal();
++
++				ASSERT(act->is_write());
++
++				if (act == curr)
++					continue;
++
++				/* Don't consider more than one seq_cst write if we are a seq_cst read. */
++				bool allow_read = true;
++
++				if (curr->is_seqcst() && (act->is_seqcst() || (last_sc_write != NULL && act->happens_before(last_sc_write))) && act != last_sc_write)
++					allow_read = false;
++
++				/* Need to check whether we will have two RMW reading from the same value */
++				if (curr->is_rmwr()) {
++					/* It is okay if we have a failing CAS */
++					if (!curr->is_rmwrcas() ||
++							valequals(curr->get_value(), act->get_value(), curr->getSize())) {
++						//Need to make sure we aren't the second RMW
++						if (!act->get_is_tail()) {
++							//we are the second RMW
++							allow_read = false;
++						}
++					}
++				}
++
++				if (allow_read) {
++					/* Only add feasible reads */
++					rf_set->push_back(act);
++				}
++
++				/* Include at most one act per-thread that "happens before" curr */
++				if (act->happens_before(curr)) {
++					if (prev_same_thread != NULL &&
++						act->get_seq_number() <= prev_same_thread->get_cv()->getClock(act->get_tid()) &&
++						act->get_hbmo()->last_rf_seq_nr <= prev_same_thread->get_seq_number()) {
++						break;
++					}
++					hb_writes->push_back(act);
++					break;
++				}
++			}
++		}
++	}
++
++	#ifdef TIME_IT
++		clock_t end = clock();
++		opt_time += end-start;
++	#endif
+ 	return rf_set;
+ }
+ 
+diff --git a/./execution.h b/../c11tester_evaluation/c11tester/execution.h
+index 5e80e18..01a5c98 100644
+--- a/./execution.h
++++ b/../c11tester_evaluation/c11tester/execution.h
+@@ -18,6 +18,8 @@
+ #include "mutex.h"
+ #include <condition_variable>
+ #include "classlist.h"
++#include <unordered_map>
++#include <vector>
+ 
+ #define INITIAL_THREAD_ID	0
+ #define MAIN_THREAD_ID		1
+@@ -96,6 +98,17 @@ public:
+ 	void restore_last_seq_num();
+ 	void collectActions();
+ 	modelclock_t get_curr_seq_num();
++
++
++	/**
++	 * New additions.
++	 *
++	 */
++	uint get_num_memory_locations() { return obj_wr_thrd_map.size; }
++	void po_propagate_hbmo(ModelAction *act, int read_seq_nr);
++	void po_propagate_hbmo(ModelAction *act, int tid, int clock, int read_seq_nr);
++	long long get_orig_time() { return orig_time; }
++	long long get_opt_time() { return opt_time; }
+ #ifdef TLS
+ 	pthread_key_t getPthreadKey() {return pthreadkey;}
+ #endif
+@@ -209,6 +222,29 @@ private:
+ 	Thread * action_select_next_thread(const ModelAction *curr) const;
+ 
+ 	bool isfinished;
++
++
++	/**
++	 * New additions.
++	 *
++	 */
++	void process_write_opt(ModelAction *curr, ModelAction *prevWrite, bool set_return_value);
++	ModelAction * process_rmw_opt(ModelAction *curr);
++	bool r_modification_order_opt(ModelAction *curr, ModelAction *rf, bool *canprune, ModelAction * prev_same_thread);
++	SnapVector<ModelAction *> * build_may_read_from_opt(ModelAction *curr);
++	ModelAction * get_last_wr_thr_obj(thread_id_t tid, void * location) const;
++	ModelAction * get_last_event_thr_obj(thread_id_t tid, void * location) const;
++	ModelAction * getLWB(unsigned int target_thread, unsigned int pointer_thread, unsigned int hb, void * addr);
++	ModelAction * get_rmw_chain_head(ModelAction *act);
++	void set_rmw_chain_head(uint chain_id, ModelAction * chain_head);
++
++	SnapVector<ModelAction *> * hb_writes;
++	std::vector<std::unordered_map<void *, std::vector<ModelAction *>>> pointers;
++	std::vector<ModelAction *> chain_id_to_head;
++
++	long long orig_time = 0;
++	long long opt_time = 0;
++	int rmw_chain_count = 0;
+ };
+ 
+ #endif	/* __EXECUTION_H__ */
+diff --git a/./log.txt b/./log.txt
+deleted file mode 100644
+index 7fe756a..0000000
+--- a/./log.txt
++++ /dev/null
+@@ -1,1461 +0,0 @@
+-diff --git a/./action.cc b/../c11tester_evaluation/c11tester/action.cc
+-index d8ce567..777eb44 100644
+---- a/./action.cc
+-+++ b/../c11tester_evaluation/c11tester/action.cc
+-@@ -43,7 +43,12 @@ ModelAction::ModelAction(action_type_t type, memory_order order, void *loc,
+- 	type(type),
+- 	order(order),
+- 	original_order(order),
+--	seq_number(ACTION_INITIAL_CLOCK)
+-+	seq_number(ACTION_INITIAL_CLOCK),
+-+	hbmo_cv(NULL),
+-+	is_tail(true),
+-+	chain_head(NULL),
+-+	rmw_chain_id(0),
+-+	chain_event_order(0)
+- {
+- 	/* References to NULL atomic variables can end up here */
+- 	ASSERT(loc || type == ATOMIC_FENCE || type == ATOMIC_NOP);
+-@@ -75,7 +80,12 @@ ModelAction::ModelAction(action_type_t type, memory_order order, uint64_t value,
+- 	type(type),
+- 	order(order),
+- 	original_order(order),
+--	seq_number(ACTION_INITIAL_CLOCK)
+-+	seq_number(ACTION_INITIAL_CLOCK),
+-+	hbmo_cv(NULL),
+-+	is_tail(true),
+-+	chain_head(NULL),
+-+	rmw_chain_id(0),
+-+	chain_event_order(0)
+- {
+- 	Thread *t = thread_current();
+- 	this->tid = t!= NULL ? t->get_id() : -1;
+-@@ -106,7 +116,12 @@ ModelAction::ModelAction(action_type_t type, memory_order order, void *loc,
+- 	type(type),
+- 	order(order),
+- 	original_order(order),
+--	seq_number(ACTION_INITIAL_CLOCK)
+-+	seq_number(ACTION_INITIAL_CLOCK),
+-+	hbmo_cv(NULL),
+-+	is_tail(true),
+-+	chain_head(NULL),
+-+	rmw_chain_id(0),
+-+	chain_event_order(0)
+- {
+- 	/* References to NULL atomic variables can end up here */
+- 	ASSERT(loc);
+-@@ -140,7 +155,12 @@ ModelAction::ModelAction(action_type_t type, const char * position, memory_order
+- 	type(type),
+- 	order(order),
+- 	original_order(order),
+--	seq_number(ACTION_INITIAL_CLOCK)
+-+	seq_number(ACTION_INITIAL_CLOCK),
+-+	hbmo_cv(NULL),
+-+	is_tail(true),
+-+	chain_head(NULL),
+-+	rmw_chain_id(0),
+-+	chain_event_order(0)
+- {
+- 	/* References to NULL atomic variables can end up here */
+- 	ASSERT(loc);
+-@@ -175,7 +195,12 @@ ModelAction::ModelAction(action_type_t type, const char * position, memory_order
+- 	type(type),
+- 	order(order),
+- 	original_order(order),
+--	seq_number(ACTION_INITIAL_CLOCK)
+-+	seq_number(ACTION_INITIAL_CLOCK),
+-+	hbmo_cv(NULL),
+-+	is_tail(true),
+-+	chain_head(NULL),
+-+	rmw_chain_id(0),
+-+	chain_event_order(0)
+- {
+- 	/* References to NULL atomic variables can end up here */
+- 	ASSERT(loc || type == ATOMIC_FENCE);
+-@@ -356,12 +381,15 @@ bool ModelAction::is_annotation() const
+- 
+- bool ModelAction::is_relaxed() const
+- {
+--	return order == std::memory_order_relaxed;
+-+	return false;
+-+	//return order == std::memory_order_relaxed;
+- }
+- 
+- bool ModelAction::is_acquire() const
+- {
+- 	switch (order) {
+-+	case std::memory_order_release:
+-+	case std::memory_order_relaxed:
+- 	case std::memory_order_acquire:
+- 	case std::memory_order_acq_rel:
+- 	case std::memory_order_seq_cst:
+-@@ -374,6 +402,8 @@ bool ModelAction::is_acquire() const
+- bool ModelAction::is_release() const
+- {
+- 	switch (order) {
+-+	case std::memory_order_relaxed:
+-+	case std::memory_order_acquire:
+- 	case std::memory_order_release:
+- 	case std::memory_order_acq_rel:
+- 	case std::memory_order_seq_cst:
+-@@ -385,7 +415,8 @@ bool ModelAction::is_release() const
+- 
+- bool ModelAction::is_seqcst() const
+- {
+--	return order == std::memory_order_seq_cst;
+-+	//return order == std::memory_order_seq_cst;
+-+	return false;
+- }
+- 
+- bool ModelAction::same_var(const ModelAction *act) const
+-diff --git a/./action.h b/../c11tester_evaluation/c11tester/action.h
+-index 5357fe4..523a9f0 100644
+---- a/./action.h
+-+++ b/../c11tester_evaluation/c11tester/action.h
+-@@ -196,7 +196,22 @@ public:
+- 	void set_thread_operand(Thread *th) { thread_operand = th; }
+- 
+- 	void setActionRef(sllnode<ModelAction *> *ref) { action_ref = ref; }
+--	sllnode<ModelAction *> * getActionRef() { return action_ref; }
+-+	sllnode<ModelAction *> * getActionRef() const { return action_ref; }
+-+
+-+
+-+
+-+	/**
+-+	 * New additions.
+-+	 *
+-+	 */
+-+	ClockVector * get_hbmo() {return hbmo_cv; }
+-+	void set_hbmo(ClockVector * clock) { hbmo_cv = clock; }
+-+	uint get_rmw_chain_id() { return rmw_chain_id; }
+-+	void set_rmw_chain_id(uint id) { rmw_chain_id = id; }
+-+	uint get_chain_event_order() { return chain_event_order; }
+-+	void set_chain_event_order(uint order) { chain_event_order = order; }
+-+	bool get_is_tail() { return is_tail; }
+-+	void set_is_tail(bool flag) { is_tail = flag; }
+- 
+- 	SNAPSHOTALLOC
+- private:
+-@@ -256,6 +271,28 @@ private:
+- 	 * should represent the action's position in the execution order.
+- 	 */
+- 	modelclock_t seq_number;
+-+
+-+
+-+
+-+	/**
+-+	 * New additions.
+-+	 *
+-+	 */
+-+
+-+	/** @brief HBMO clock vector. */
+-+	ClockVector *hbmo_cv;
+-+
+-+	/** @brief Head of the RMW chain. */
+-+	ModelAction * chain_head;
+-+
+-+	/** @brief ID of the RMW chain. */
+-+	uint rmw_chain_id;
+-+
+-+	/** @brief Order of the event in the RMW chain. */
+-+	uint chain_event_order;
+-+
+-+	/** @brief Flag denoting whether the event is the tail of the RMW chain. */
+-+	bool is_tail;
+- };
+- 
+- #endif	/* __ACTION_H__ */
+-diff --git a/./clockvector.cc b/../c11tester_evaluation/c11tester/clockvector.cc
+-index ba5d1f4..8fd1081 100644
+---- a/./clockvector.cc
+-+++ b/../c11tester_evaluation/c11tester/clockvector.cc
+-@@ -6,6 +6,7 @@
+- #include "clockvector.h"
+- #include "common.h"
+- #include "threads-model.h"
+-+#include "set"
+- 
+- 
+- /**
+-@@ -28,6 +29,7 @@ ClockVector::ClockVector(ClockVector *parent, const ModelAction *act)
+- 
+- 	if (act != NULL)
+- 		clock[id_to_int(act->get_tid())] = act->get_seq_number();
+-+	last_rf_seq_nr = 0;
+- }
+- 
+- /** @brief Destructor */
+-@@ -58,10 +60,76 @@ bool ClockVector::merge(const ClockVector *cv)
+- 			clock[i] = cv->clock[i];
+- 			changed = true;
+- 		}
+-+	return changed;
+-+}
+- 
+-+
+-+/**
+-+ * Merge a clock vector into this vector, using a pairwise comparison. The
+-+ * resulting vector length will be the maximum length of the two being merged.
+-+ * @param cv is the ClockVector being merged into this vector.
+-+ */
+-+std::set<int> ClockVector::merge_changed_indexes(const ClockVector *cv)
+-+{
+-+	ASSERT(cv != NULL);
+-+	if (cv->num_threads > num_threads) {
+-+		clock = (modelclock_t *)snapshot_realloc(clock, cv->num_threads * sizeof(modelclock_t));
+-+		for (int i = num_threads;i < cv->num_threads;i++)
+-+			clock[i] = 0;
+-+		num_threads = cv->num_threads;
+-+	}
+-+
+-+	std::set<int> changed_indexes;
+-+	for (int i = 0;i < cv->num_threads;i++)
+-+		if (cv->clock[i] > clock[i]) {
+-+			clock[i] = cv->clock[i];
+-+			changed_indexes.insert(i);
+-+		}
+-+	return changed_indexes;
+-+}
+-+
+-+
+-+/**
+-+ * Merge a clock vector into this vector, using a pairwise comparison. The
+-+ * resulting vector length will be the maximum length of the two being merged.
+-+ * @param cv is the ClockVector being merged into this vector.
+-+ */
+-+bool ClockVector::merge_single(int tid, int epoch)
+-+{
+-+	bool changed = false;
+-+	if (epoch > clock[tid]) {
+-+		clock[tid] = epoch;
+-+		changed = true;
+-+	}
+- 	return changed;
+- }
+- 
+-+
+-+/**
+-+ *
+-+ */
+-+bool ClockVector::greater_or_equal_excl_local_clock(const ClockVector *cv, const unsigned int tid)
+-+{
+-+	ASSERT(cv != NULL);
+-+	if (cv->num_threads > num_threads) {
+-+		clock = (modelclock_t *)snapshot_realloc(clock, cv->num_threads * sizeof(modelclock_t));
+-+		for (int i = num_threads;i < cv->num_threads;i++)
+-+			clock[i] = 0;
+-+		num_threads = cv->num_threads;
+-+	}
+-+
+-+	/* Element-wise maximum */
+-+	for (int i = 0;i < cv->num_threads;i++) {
+-+		if (i == tid)
+-+			continue;
+-+		if (clock[i] < cv->clock[i]) {
+-+			return false;
+-+		}
+-+	}
+-+	return true;
+-+}
+-+
+-+
+- /**
+-  * Merge a clock vector into this vector, using a pairwise comparison. The
+-  * resulting vector length will be the maximum length of the two being merged.
+-@@ -84,7 +152,6 @@ bool ClockVector::minmerge(const ClockVector *cv)
+- 			clock[i] = cv->clock[i];
+- 			changed = true;
+- 		}
+--
+- 	return changed;
+- }
+- 
+-@@ -127,3 +194,26 @@ void ClockVector::print() const
+- 	for (i = 0;i < num_threads;i++)
+- 		model_print("%2u%s", clock[i], (i == num_threads - 1) ? ")\n" : ", ");
+- }
+-+
+-+
+-+bool ClockVector::is_null() const
+-+{
+-+	if (num_threads == 0)
+-+		return true;
+-+	else {
+-+		for (int i = 0;i < num_threads;i++)
+-+			if (clock[i] > 0)
+-+				return false;
+-+	}
+-+	return true;
+-+}
+-+
+-+void ClockVector::update_last_rf(int rf_seq_nr)
+-+{
+-+	last_rf_seq_nr = rf_seq_nr;
+-+}
+-+
+-+int ClockVector::get_size() const
+-+{
+-+	return num_threads;
+-+}
+-\ No newline at end of file
+-diff --git a/./clockvector.h b/../c11tester_evaluation/c11tester/clockvector.h
+-index 1a36a39..11862fc 100644
+---- a/./clockvector.h
+-+++ b/../c11tester_evaluation/c11tester/clockvector.h
+-@@ -8,6 +8,7 @@
+- #include "mymemory.h"
+- #include "modeltypes.h"
+- #include "classlist.h"
+-+#include "set"
+- 
+- class ClockVector {
+- public:
+-@@ -16,6 +17,13 @@ public:
+- 	bool merge(const ClockVector *cv);
+- 	bool minmerge(const ClockVector *cv);
+- 	bool synchronized_since(const ModelAction *act) const;
+-+	std::set<int> merge_changed_indexes(const ClockVector *cv);
+-+	bool merge_single(int tid, int epoch);
+-+	bool greater_or_equal_excl_local_clock(const ClockVector *cv, const unsigned int tid);
+-+	bool is_null() const;
+-+	int get_size() const;
+-+	void update_last_rf(int rf_seq_nr);
+-+	int last_rf_seq_nr;
+- 
+- 	void print() const;
+- 	modelclock_t getClock(thread_id_t thread);
+-diff --git a/./config.h b/../c11tester_evaluation/c11tester/config.h
+-index 1d0f59f..2ad495e 100644
+---- a/./config.h
+-+++ b/../c11tester_evaluation/c11tester/config.h
+-@@ -19,6 +19,10 @@
+-  *  printed summary.*/
+- #define SUPPORT_MOD_ORDER_DUMP 0
+- 
+-+#define ORIGINAL_IMPL
+-+#define OPTIMIZED_IMPL
+-+#define TIME_IT
+-+
+- /** Do we have a 48 bit virtual address (64 bit machine) or 32 bit addresses.
+-  * Set to 1 for 48-bit, 0 for 32-bit. */
+- #ifndef BIT48
+-@@ -63,7 +67,7 @@
+- //#define memory_order_volatile_load memory_order_relaxed
+- //#define memory_order_volatile_store memory_order_relaxed
+- 
+--//#define COLLECT_STAT
+-+#define COLLECT_STAT
+- #define REPORT_DATA_RACES
+- 
+- #endif
+-diff --git a/./execution.cc b/../c11tester_evaluation/c11tester/execution.cc
+-index d2efaba..7f526d4 100644
+---- a/./execution.cc
+-+++ b/../c11tester_evaluation/c11tester/execution.cc
+-@@ -3,6 +3,7 @@
+- #include <new>
+- #include <stdarg.h>
+- #include <errno.h>
+-+#include <chrono>
+- 
+- #include "model.h"
+- #include "execution.h"
+-@@ -17,6 +18,8 @@
+- #include "history.h"
+- #include "fuzzer.h"
+- #include "newfuzzer.h"
+-+#include "set"
+-+
+- 
+- #ifdef COLLECT_STAT
+- static unsigned int atomic_load_count = 0;
+-@@ -79,6 +82,8 @@ ModelExecution::ModelExecution(ModelChecker *m, Scheduler *scheduler) :
+- 	thrd_last_fence_release(),
+- 	priv(new struct model_snapshot_members ()),
+- 	mo_graph(new CycleGraph()),
+-+	hb_writes(new SnapVector<ModelAction *>()),
+-+	chain_id_to_head(),
+- #ifdef NEWFUZZER
+- 	fuzzer(new NewFuzzer()),
+- #else
+-@@ -163,10 +168,10 @@ static inline void record_atomic_stats(ModelAction * act)
+- 		atomic_store_count++;
+- 		break;
+- 	case ATOMIC_RMW:
+--		atomic_load_count++;
+-+		atomic_rmw_count++;
+- 		break;
+- 	case ATOMIC_READ:
+--		atomic_rmw_count++;
+-+		atomic_load_count++;
+- 		break;
+- 	case ATOMIC_FENCE:
+- 		atomic_fence_count++;
+-@@ -224,7 +229,7 @@ unsigned int ModelExecution::get_num_threads() const
+- /** @return a sequence number for a new ModelAction */
+- modelclock_t ModelExecution::get_next_seq_num()
+- {
+--	return ++priv->used_sequence_numbers;
+-+	return ++++priv->used_sequence_numbers;
+- }
+- 
+- /** @return a sequence number for a new ModelAction */
+-@@ -379,17 +384,213 @@ ModelAction * ModelExecution::convertNonAtomicStore(void * location) {
+- 	thread_id_t storethread;
+- 	getStoreThreadAndClock(location, &storethread, &storeclock);
+- 	setAtomicStoreFlag(location);
+--	ModelAction * act = new ModelAction(NONATOMIC_WRITE, memory_order_relaxed, location, value, get_thread(storethread));
+--	act->set_seq_number(storeclock);
+-+	ModelAction * act = new ModelAction(NONATOMIC_WRITE, memory_order_release, location, value, get_thread(storethread));
+-+	act->set_seq_number(storeclock+1);
+- 	add_normal_write_to_lists(act);
+-+	ModelAction *last_act = get_last_action(act->get_tid());
+-+	if (last_act != NULL)
+-+		act->get_cv()->merge(last_act->get_cv());
+-+
+-+	#if defined(ORIGINAL_IMPL)
+-+		#ifdef TIME_IT
+-+			clock_t start_orig = clock();
+-+		#endif
+-+		w_modification_order(act);
+-+		#ifdef TIME_IT
+-+			clock_t end_orig = clock();
+-+			orig_time += end_orig - start_orig;
+-+		#endif
+-+	#endif
+-+
+-+	#ifdef OPTIMIZED_IMPL
+-+		#ifdef TIME_IT
+-+			clock_t start_opt = clock();
+-+		#endif
+-+		ModelAction *prev_write = get_last_wr_thr_obj(act->get_tid(), act->get_location());
+-+		process_write_opt(act, prev_write, false);
+-+		act->set_hbmo(new ClockVector(act->get_cv(), act));
+-+		if (prev_write != NULL) {
+-+			act->get_hbmo()->merge(prev_write->get_hbmo());
+-+		}
+-+		#ifdef TIME_IT
+-+			clock_t end_opt = clock();
+-+			opt_time += end_opt - start_opt;
+-+		#endif
+-+	#endif
+- 	add_write_to_lists(act);
+--	w_modification_order(act);
+-+
+- #ifdef NEWFUZZER
+- 	model->get_history()->process_action(act, act->get_tid());
+- #endif
+- 	return act;
+- }
+- 
+-+
+-+void ModelExecution::po_propagate_hbmo(ModelAction * act, int tid, int clock, int read_seq_nr) {
+-+	sllnode<ModelAction *> * rit;
+-+	for (rit = act->getActionRef()->getNext(); rit != NULL;rit=rit->getNext()) {
+-+		ModelAction * po_write = rit->getVal();
+-+		bool changed = false;
+-+
+-+		if (po_write->get_seq_number() > clock)
+-+			break;
+-+
+-+		if ((act->get_rmw_chain_id() != 0 && act->get_rmw_chain_id() == po_write->get_rmw_chain_id())) {
+-+			continue;
+-+		} else {
+-+			changed = po_write->get_hbmo()->merge_single(tid, clock);
+-+			po_write->get_hbmo()->update_last_rf(read_seq_nr);
+-+		}
+-+		if (!changed && !po_write->is_rmw())
+-+			break;
+-+	}
+-+}
+-+
+-+void ModelExecution::po_propagate_hbmo(ModelAction * act, int read_seq_nr) {
+-+	sllnode<ModelAction *> * rit;
+-+	std::set<int> merged_rmw_chains;
+-+	for (rit = act->getActionRef()->getNext(); rit != NULL;rit=rit->getNext()) {
+-+		ModelAction * po_write = rit->getVal();
+-+		bool changed = false;
+-+		if (((act->get_rmw_chain_id() != 0 && act->get_rmw_chain_id() == po_write->get_rmw_chain_id())) ||
+-+			(po_write->get_rmw_chain_id() != 0 && merged_rmw_chains.find(po_write->get_rmw_chain_id()) != merged_rmw_chains.end())) {
+-+			continue;
+-+		} else {
+-+			changed = po_write->get_hbmo()->merge(act->get_hbmo());
+-+			po_write->get_hbmo()->update_last_rf(read_seq_nr);
+-+		}
+-+		if (!changed && !po_write->is_rmw())
+-+			break;
+-+	}
+-+}
+-+
+-+
+-+bool ModelExecution::r_modification_order_opt(ModelAction *curr, ModelAction *rf, bool *canprune, ModelAction * prev_same_thread) {
+-+	int curr_tid = curr->get_tid();
+-+	int read_tid = rf->get_tid();
+-+	int rf_write_clock = rf->get_hbmo()->getClock(read_tid);
+-+
+-+	if (rf->get_rmw_chain_id() != 0 && !rf->is_rmw()) {
+-+		rf_write_clock = rf->get_seq_number();
+-+	}
+-+
+-+	SnapVector<action_list_t> *thrd_lists = obj_thrd_map.get(curr->get_location());
+-+	ASSERT(curr->is_read());
+-+
+-+	#if !defined(ORIGINAL_IMPL)
+-+		/* Need to ensure thrd_lists is big enough because we have not added the curr actions yet.  */
+-+		if ((int)thrd_lists->size() <= curr_tid) {
+-+			uint oldsize = thrd_lists->size();
+-+			thrd_lists->resize(priv->next_thread_id);
+-+			for(uint i = oldsize;i < priv->next_thread_id;i++)
+-+				new (&(*thrd_lists)[i]) action_list_t();
+-+			fixup_action_list(thrd_lists);
+-+		}
+-+	#endif
+-+
+-+	ClockVector * maximal_hbmo_clocks = new ClockVector();
+-+
+-+	bool maximal_predecessor_threads[thrd_lists->size()] = {false};
+-+
+-+	for (unsigned int i = 0; i < hb_writes->size(); i++) {
+-+		ModelAction * last_hb_write = (*hb_writes)[i];
+-+
+-+		if (last_hb_write != rf) {
+-+			if (rf->get_rmw_chain_id() != 0 && last_hb_write->get_rmw_chain_id() != 0) {
+-+				if (rf->get_rmw_chain_id() == last_hb_write->get_rmw_chain_id()) {
+-+					if (last_hb_write->get_chain_event_order() > rf->get_chain_event_order())
+-+						return false;
+-+					else
+-+						continue;
+-+				}
+-+			}
+-+
+-+			if (last_hb_write->get_hbmo()->getClock(read_tid) >= rf_write_clock)
+-+				return false;
+-+
+-+			if (rf->is_rmw()) {
+-+				ModelAction *rmw_chain_head = get_rmw_chain_head(rf);
+-+				ASSERT(!(rmw_chain_head==NULL));
+-+				if (!rmw_chain_head->equals(rf)) {
+-+					int rmw_chain_head_clock = rmw_chain_head->get_hbmo()->getClock(rmw_chain_head->get_tid());
+-+					if (last_hb_write->get_hbmo()->getClock(rmw_chain_head->get_tid()) >= rmw_chain_head->get_seq_number())
+-+						return false;
+-+				}
+-+			}
+-+
+-+			if (last_hb_write == get_last_wr_thr_obj(last_hb_write->get_tid(), last_hb_write->get_location()))
+-+				maximal_predecessor_threads[last_hb_write->get_tid()] = true;
+-+			maximal_hbmo_clocks->merge(last_hb_write->get_hbmo());
+-+		} else {
+-+			if (last_hb_write == get_last_wr_thr_obj(last_hb_write->get_tid(), last_hb_write->get_location())) {
+-+				maximal_predecessor_threads[last_hb_write->get_tid()] = true;
+-+			}
+-+		}
+-+	}
+-+
+-+	if (!maximal_hbmo_clocks->is_null()) {
+-+		std::set<unsigned int> L = {};
+-+		for (unsigned int x = 0; x < maximal_hbmo_clocks->get_size(); x++) {
+-+			if (!maximal_predecessor_threads[x] && maximal_hbmo_clocks->getClock(x) > curr->get_cv()->getClock(x)) {
+-+				L.insert(x);
+-+			}
+-+		}
+-+
+-+		std::set<unsigned int>::iterator it;
+-+		std::set<unsigned int> tempL;
+-+		bool reiterate;
+-+		do {
+-+			reiterate = false;
+-+			for (it = L.begin(); it != L.end(); ++it) {
+-+				if (maximal_hbmo_clocks->getClock(read_tid) >= rf_write_clock)
+-+					return false;
+-+
+-+				int last_hb_write_pred_clock = maximal_hbmo_clocks->getClock(*it);
+-+				if (last_hb_write_pred_clock <= curr->get_cv()->getClock(*it))
+-+					continue;
+-+
+-+				ModelAction * last_hb_write_pred = getLWB(*it, curr->get_tid(), last_hb_write_pred_clock, curr->get_location());
+-+				if (last_hb_write_pred != NULL) {
+-+					std::set<int> changed_indexes = maximal_hbmo_clocks->merge_changed_indexes(last_hb_write_pred->get_hbmo());
+-+
+-+					std::set<int>::iterator it2;
+-+					for (it2 = changed_indexes.begin(); it2 != changed_indexes.end(); ++it2) {
+-+						if (*it2 != *it && !maximal_predecessor_threads[*it2])
+-+							tempL.insert(*it2);
+-+						if (*it2 == read_tid) {
+-+							if (maximal_hbmo_clocks->getClock(read_tid) >= rf_write_clock)
+-+								return false;
+-+						}
+-+					}
+-+				}
+-+			}
+-+
+-+			if (tempL.size() > 0) {
+-+				L = tempL;
+-+				tempL.clear();
+-+				reiterate = true;
+-+			}
+-+		} while(reiterate);
+-+	}
+-+
+-+	rf->get_hbmo()->merge(maximal_hbmo_clocks);
+-+	rf->get_hbmo()->update_last_rf(curr->get_seq_number());
+-+
+-+	action_list_t *list = &(*thrd_lists)[curr->get_tid()];
+-+	auto rit = list->end();
+-+	if (rit != NULL) {
+-+		if (rit->getVal()->is_read() && rit->getVal()->get_reads_from()->equals(rf)) {
+-+			#ifdef ORIGINAL_IMPL
+-+				ASSERT(canprune);
+-+			#endif
+-+			*canprune = true;
+-+		}
+-+	}
+-+	return true;
+-+}
+-+
+-+
+-+
+- /**
+-  * Processes a read model action.
+-  * @param curr is the read model action to process.
+-@@ -400,41 +601,142 @@ bool ModelExecution::process_read(ModelAction *curr, SnapVector<ModelAction *> *
+- {
+- 	SnapVector<ModelAction *> * priorset = new SnapVector<ModelAction *>();
+- 	bool hasnonatomicstore = hasNonAtomicStore(curr->get_location());
+-+
+- 	if (hasnonatomicstore) {
+- 		ModelAction * nonatomicstore = convertNonAtomicStore(curr->get_location());
+- 		rf_set->push_back(nonatomicstore);
+-+
+-+		#if defined(OPTIMIZED_IMPL)
+-+			#ifdef TIME_IT
+-+				clock_t start = clock();
+-+			#endif
+-+
+-+			if (curr->get_cv()->synchronized_since(nonatomicstore)) {
+-+				bool same_thread_hb_write_exists = false;
+-+
+-+				for(unsigned int i = 0; i < hb_writes->size(); i++) {
+-+					ModelAction * last_hb_write = (*hb_writes)[i];
+-+					if (last_hb_write->get_tid() == nonatomicstore->get_tid()) {
+-+						same_thread_hb_write_exists = true;
+-+						if (nonatomicstore->get_seq_number() >= last_hb_write->get_seq_number()) {
+-+							(*hb_writes)[i] = nonatomicstore;
+-+						}
+-+						break;
+-+					}
+-+				}
+-+				if (!same_thread_hb_write_exists) {
+-+					hb_writes->push_back(nonatomicstore);
+-+				}
+-+			}
+-+
+-+			#ifdef TIME_IT
+-+				clock_t finish = clock();
+-+				opt_time += finish-start;
+-+			#endif
+-+		#endif
+- 	}
+- 
+--	// Remove writes that violate read modification order
+--	/*
+--	   uint i = 0;
+--	   while (i < rf_set->size()) {
+--	        ModelAction * rf = (*rf_set)[i];
+--	        if (!r_modification_order(curr, rf, NULL, NULL, true)) {
+--	                (*rf_set)[i] = rf_set->back();
+--	                rf_set->pop_back();
+--	        } else
+--	                i++;
+--	   }*/
+-+	ModelAction * prev_same_thread = NULL;
+-+
+-+	#if defined(ORIGINAL_IMPL) && defined(OPTIMIZED_IMPL)
+-+		SnapVector<action_list_t> *thrd_lists = obj_thrd_map.get(curr->get_location());
+-+		/* Need to ensure thrd_lists is big enough because we have not added the curr actions yet.  */
+-+		if ((int)thrd_lists->size() <= curr->get_tid()) {
+-+			uint oldsize = thrd_lists->size();
+-+			thrd_lists->resize(priv->next_thread_id);
+-+			for(uint i = oldsize;i < priv->next_thread_id;i++)
+-+				new (&(*thrd_lists)[i]) action_list_t();
+-+			fixup_action_list(thrd_lists);
+-+		}
+-+	#endif
+- 
+- 	while(true) {
+- 		int index = fuzzer->selectWrite(curr, rf_set);
+--
+- 		ModelAction *rf = (*rf_set)[index];
+--
+- 		ASSERT(rf);
+- 		bool canprune = false;
+--		if (r_modification_order(curr, rf, priorset, &canprune)) {
+--			for(unsigned int i=0;i<priorset->size();i++) {
+--				mo_graph->addEdge((*priorset)[i], rf);
+--			}
+-+
+-+		#ifdef ORIGINAL_IMPL
+-+			#ifdef TIME_IT
+-+				clock_t start = clock();
+-+			#endif
+-+
+-+			bool ret_value1 = r_modification_order(curr, rf, priorset, &canprune);
+-+
+-+			#ifdef TIME_IT
+-+				clock_t finish = clock();
+-+				orig_time += finish-start;
+-+			#endif
+-+		#endif
+-+
+-+		#ifdef OPTIMIZED_IMPL
+-+			#ifdef TIME_IT
+-+				clock_t start_opt = clock();
+-+			#endif
+-+			bool ret_value2 = r_modification_order_opt(curr, rf, &canprune, prev_same_thread);
+-+			#ifdef TIME_IT
+-+				clock_t finish_opt = clock();
+-+				opt_time += finish_opt-start_opt;
+-+			#endif
+-+		#endif
+-+
+-+		bool ret_value;
+-+		#ifdef OPTIMIZED_IMPL
+-+			ret_value = ret_value2;
+-+		#endif
+-+		#ifdef ORIGINAL_IMPL
+-+			ret_value = ret_value1;
+-+		#endif
+-+
+-+		if (ret_value) {
+-+			#ifdef OPTIMIZED_IMPL
+-+				#ifdef TIME_IT
+-+					clock_t start_opt_prop_overhead = clock();
+-+				#endif
+-+				if (rf->is_rmw()) {
+-+					if (rf->get_tid() != get_rmw_chain_head(rf)->get_tid())
+-+						po_propagate_hbmo(get_rmw_chain_head(rf), curr->get_seq_number());
+-+					else
+-+						po_propagate_hbmo(rf, curr->get_seq_number());
+-+				} else {
+-+					po_propagate_hbmo(rf, curr->get_seq_number());
+-+				}
+-+				#ifdef TIME_IT
+-+					clock_t finish_opt_prop_overhead = clock();
+-+					opt_time += finish_opt_prop_overhead-start_opt_prop_overhead;
+-+				#endif
+-+			#endif
+-+
+-+			#ifdef ORIGINAL_IMPL
+-+				#ifdef TIME_IT
+-+					clock_t start_mo_overhead = clock();
+-+				#endif
+-+
+-+				for(unsigned int i=0;i<priorset->size();i++) {
+-+					if (rf->is_rmw()) {
+-+						if ((*priorset)[i]->get_rmw_chain_id() == rf->get_rmw_chain_id()) {
+-+							mo_graph->addEdge((*priorset)[i], rf);
+-+						} else {
+-+							mo_graph->addEdge((*priorset)[i], get_rmw_chain_head(rf));
+-+						}
+-+					} else {
+-+						mo_graph->addEdge((*priorset)[i], rf);
+-+					}
+-+				}
+-+				#ifdef TIME_IT
+-+					clock_t finish_mo_overhead = clock();
+-+					orig_time += finish_mo_overhead-start_mo_overhead;
+-+				#endif
+-+			#endif
+- 			read_from(curr, rf);
+- 			get_thread(curr)->set_return_value(rf->get_write_value());
+- 			delete priorset;
+- 			//Update acquire fence clock vector
+- 			ClockVector * hbcv = get_hb_from_write(rf);
+-+
+- 			if (hbcv != NULL)
+- 				get_thread(curr)->get_acq_fence_cv()->merge(hbcv);
+-+
+- 			return canprune && (curr->get_type() == ATOMIC_READ);
+- 		}
+- 		priorset->clear();
+-@@ -443,6 +745,73 @@ bool ModelExecution::process_read(ModelAction *curr, SnapVector<ModelAction *> *
+- 	}
+- }
+- 
+-+ModelAction * ModelExecution::getLWB(unsigned int target_thread, unsigned int pointer_thread, unsigned int hb, void * addr) {
+-+	SnapVector<simple_action_list_t> *thrd_lists = obj_wr_thrd_map.get(addr);
+-+	if (thrd_lists != NULL && target_thread < thrd_lists->size()) {
+-+		/* Iterate over actions in thread, starting from most recent */
+-+		simple_action_list_t *list = &(*thrd_lists)[target_thread];
+-+
+-+		if (list->size() > 0) {
+-+			ModelAction *first_write = list->front();
+-+			if (!(first_write->get_seq_number() <= hb))
+-+				return NULL;
+-+		} else
+-+			return NULL;
+-+
+-+		ModelAction * pointer_event = NULL;
+-+		if (pointers.size() <= target_thread)
+-+			pointers.resize(target_thread+1, std::unordered_map<void *, std::vector<ModelAction *>>());
+-+
+-+		if (pointers[target_thread].find(addr) == pointers[target_thread].end() ||
+-+			pointers[target_thread][addr].size() <= pointer_thread) {
+-+			pointers[target_thread].insert(std::make_pair(addr, std::vector<ModelAction *>()));
+-+		} else
+-+			pointer_event = pointers[target_thread][addr][pointer_thread];
+-+
+-+		if (pointer_event == NULL) {
+-+			sllnode<ModelAction *> * rit;
+-+			for (rit = list->end();rit != NULL;rit=rit->getPrev()) {
+-+				ModelAction *act = rit->getVal();
+-+				if (act->get_seq_number() <= hb) {
+-+					pointer_event = act;
+-+					break;
+-+				}
+-+			}
+-+		} else {
+-+			if (!(pointer_event->get_seq_number() <= hb)) {
+-+				sllnode<ModelAction *> * rit;
+-+				for (rit = pointer_event->getActionRef();rit != NULL;rit=rit->getPrev()) {
+-+					ModelAction *act = rit->getVal();
+-+					if (act->get_seq_number() <= hb) {
+-+						pointer_event = act;
+-+						break;
+-+					}
+-+				}
+-+			} else {
+-+				if (pointer_event->get_seq_number() == hb)
+-+				return pointer_event;
+-+
+-+				sllnode<ModelAction *> * rit;
+-+				for (rit = pointer_event->getActionRef();rit != NULL;rit=rit->getNext()) {
+-+					ModelAction *act = rit->getVal();
+-+					if (act->get_seq_number() <= hb)
+-+						pointer_event = act;
+-+					else
+-+						break;
+-+				}
+-+			}
+-+		}
+-+
+-+		if (pointers[target_thread][addr].size() <= pointer_thread)
+-+			pointers[target_thread][addr].resize(pointer_thread+1, 0);
+-+
+-+		pointers[target_thread][addr][pointer_thread] = pointer_event;
+-+
+-+		return pointer_event;
+-+	}
+-+	return NULL;
+-+}
+-+
+- /**
+-  * Processes a lock, trylock, or unlock model action.  @param curr is
+-  * the read model action to process.
+-@@ -584,6 +953,59 @@ bool ModelExecution::process_mutex(ModelAction *curr)
+- 	return false;
+- }
+- 
+-+
+-+/**
+-+ * @brief Get the last write action performed by a particular Thread
+-+ * @param tid The thread ID of the Thread in question
+-+ * @return The last action in the thread
+-+ */
+-+ModelAction * ModelExecution::get_last_wr_thr_obj(thread_id_t tid, void * location) const
+-+{
+-+	SnapVector<simple_action_list_t> *thrd_lists = obj_wr_thrd_map.get(location);
+-+	if (thrd_lists != NULL && tid < thrd_lists->size()) {
+-+		simple_action_list_t *list = &(*thrd_lists)[tid];
+-+		if (list->size() > 0)
+-+			return list->end()->getVal();
+-+	}
+-+	return NULL;
+-+}
+-+
+-+
+-+/**
+-+ * @brief Get the last write performed by a particular Thread on a given location
+-+ * @param tid The thread ID of the Thread in question
+-+ * @param location The location in question
+-+ * @return The last action in the thread
+-+ */
+-+ModelAction * ModelExecution::get_last_event_thr_obj(thread_id_t tid, void * location) const
+-+{
+-+	SnapVector<action_list_t> *thrd_lists = obj_thrd_map.get(location);
+-+	if (thrd_lists != NULL && tid < thrd_lists->size()) {
+-+		action_list_t *list = &(*thrd_lists)[tid];
+-+		sllnode<ModelAction *> * rit;
+-+		if (list->size() > 0)
+-+			return list->end()->getVal();
+-+	}
+-+	return NULL;
+-+}
+-+
+-+
+-+void ModelExecution::process_write_opt(ModelAction *curr, ModelAction *prevWrite, bool set_return_value)
+-+{
+-+	if (curr->is_rmw()) {
+-+		curr->get_hbmo()->merge(curr->get_cv());
+-+	} else {
+-+		curr->set_hbmo(new ClockVector(curr->get_cv(), curr));
+-+	}
+-+
+-+	if (prevWrite != NULL) {
+-+		curr->get_hbmo()->merge(prevWrite->get_hbmo());
+-+	}
+-+
+-+	if (set_return_value)
+-+		get_thread(curr)->set_return_value(VALUE_NONE);
+-+}
+-+
+- /**
+-  * Process a write ModelAction
+-  * @param curr The ModelAction to process
+-@@ -851,7 +1273,17 @@ ModelAction * ModelExecution::check_current_action(ModelAction *curr)
+- 	bool canprune = false;
+- 	/* Build may_read_from set for newly-created actions */
+- 	if (curr->is_read() && newly_explored) {
+--		rf_set = build_may_read_from(curr);
+-+
+-+		#if defined(OPTIMIZED_IMPL) && !defined(ORIGINAL_IMPL)
+-+			rf_set = build_may_read_from_opt(curr);
+-+		#endif
+-+		#if defined(OPTIMIZED_IMPL) && defined(ORIGINAL_IMPL)
+-+			build_may_read_from_opt(curr);
+-+		#endif
+-+		#ifdef ORIGINAL_IMPL
+-+			rf_set = build_may_read_from(curr);
+-+		#endif
+-+
+- 		canprune = process_read(curr, rf_set);
+- 		delete rf_set;
+- 	} else
+-@@ -859,19 +1291,40 @@ ModelAction * ModelExecution::check_current_action(ModelAction *curr)
+- 
+- 	/* Add the action to lists if not the second part of a rmw */
+- 	if (newly_explored) {
+--#ifdef COLLECT_STAT
+--		record_atomic_stats(curr);
+--#endif
+- 		add_action_to_lists(curr, canprune);
+- 	}
+--
+--	if (curr->is_write())
+--		add_write_to_lists(curr);
+-+	#ifdef COLLECT_STAT
+-+		record_atomic_stats(curr);
+-+	#endif
+- 
+- 	process_thread_action(curr);
+- 
+-+	if (curr->is_write()) {
+-+		#if defined(ORIGINAL_IMPL)
+-+			#ifdef TIME_IT
+-+				clock_t start_orig = clock();
+-+			#endif
+-+			process_write(curr);
+-+			#ifdef TIME_IT
+-+				clock_t end_orig = clock();
+-+				orig_time += end_orig - start_orig;
+-+			#endif
+-+		#endif
+-+
+-+		#ifdef OPTIMIZED_IMPL
+-+			#ifdef TIME_IT
+-+				clock_t start_opt = clock();
+-+			#endif
+-+			ModelAction *prev_write = get_last_wr_thr_obj(curr->get_tid(), curr->get_location());
+-+			process_write_opt(curr, prev_write, true);
+-+			#ifdef TIME_IT
+-+				clock_t finish_opt = clock();
+-+				opt_time += finish_opt - start_opt;
+-+			#endif
+-+		#endif
+-+	}
+- 	if (curr->is_write())
+--		process_write(curr);
+-+		add_write_to_lists(curr);
+- 
+- 	if (curr->is_fence())
+- 		process_fence(curr);
+-@@ -882,13 +1335,76 @@ ModelAction * ModelExecution::check_current_action(ModelAction *curr)
+- 	return curr;
+- }
+- 
+-+ModelAction * ModelExecution::get_rmw_chain_head(ModelAction *act) {
+-+	uint chain_id = act->get_rmw_chain_id();
+-+	if (chain_id == 0)
+-+		return NULL;
+-+	else {
+-+		return chain_id_to_head[chain_id];
+-+	}
+-+}
+-+
+-+void ModelExecution::set_rmw_chain_head(uint chain_id, ModelAction *act) {
+-+	if (chain_id_to_head.size() <= chain_id)
+-+		chain_id_to_head.resize(chain_id*2, NULL);
+-+	chain_id_to_head[chain_id] = act;
+-+}
+-+
+-+ModelAction * ModelExecution::process_rmw_opt(ModelAction *lastread) {
+-+	lastread->set_hbmo(lastread->get_reads_from()->get_hbmo());
+-+
+-+	if (lastread->get_reads_from()->is_rmw()) {
+-+		lastread->set_rmw_chain_id(lastread->get_reads_from()->get_rmw_chain_id());
+-+		lastread->set_chain_event_order(lastread->get_reads_from()->get_chain_event_order() + 1);
+-+	} else {
+-+		lastread->get_reads_from()->set_chain_event_order(0);
+-+		lastread->set_chain_event_order(1);
+-+	}
+-+	if (lastread->get_tid() != get_rmw_chain_head(lastread)->get_tid()) {
+-+		po_propagate_hbmo(get_rmw_chain_head(lastread), lastread->get_seq_number());
+-+	}
+-+
+-+	lastread->get_reads_from()->set_is_tail(false);
+-+	return lastread;
+-+}
+-+
+- /** Close out a RMWR by converting previous RMWR into a RMW or READ. */
+- ModelAction * ModelExecution::process_rmw(ModelAction *act) {
+- 	ModelAction *lastread = get_last_action(act->get_tid());
+- 	lastread->process_rmw(act);
+--	if (act->is_rmw()) {
+--		mo_graph->addRMWEdge(lastread->get_reads_from(), lastread);
+-+
+-+	if (act->is_rmw() && !lastread->get_reads_from()->is_rmw()) {
+-+		rmw_chain_count++;
+-+		lastread->get_reads_from()->set_rmw_chain_id(rmw_chain_count);
+-+		lastread->set_rmw_chain_id(rmw_chain_count);
+-+		set_rmw_chain_head(rmw_chain_count, lastread->get_reads_from());
+- 	}
+-+
+-+	#if defined(ORIGINAL_IMPL)
+-+		#ifdef TIME_IT
+-+			clock_t start_orig = clock();
+-+		#endif
+-+		if (act->is_rmw()) {
+-+			mo_graph->addRMWEdge(lastread->get_reads_from(), lastread);
+-+		}
+-+		#ifdef TIME_IT
+-+			clock_t finish_orig = clock();
+-+			orig_time += finish_orig-start_orig;
+-+		#endif
+-+	#endif
+-+
+-+	#ifdef OPTIMIZED_IMPL
+-+		#ifdef TIME_IT
+-+			clock_t start_opt = clock();
+-+		#endif
+-+		if (act->is_rmw()) {
+-+			process_rmw_opt(lastread);
+-+		}
+-+		#ifdef TIME_IT
+-+			clock_t finish_opt = clock();
+-+			opt_time += finish_opt - start_opt;
+-+		#endif
+-+	#endif
+- 	return lastread;
+- }
+- 
+-@@ -919,44 +1435,49 @@ bool ModelExecution::r_modification_order(ModelAction *curr, const ModelAction *
+- 	ASSERT(curr->is_read());
+- 
+- 	/* Last SC fence in the current thread */
+--	ModelAction *last_sc_fence_local = get_last_seq_cst_fence(curr->get_tid(), NULL);
+-+	//ModelAction *last_sc_fence_local = get_last_seq_cst_fence(curr->get_tid(), NULL);
+- 
+- 	int tid = curr->get_tid();
+- 
+--	/* Need to ensure thrd_lists is big enough because we have not added the curr actions yet.  */
+--	if ((int)thrd_lists->size() <= tid) {
+--		uint oldsize = thrd_lists->size();
+--		thrd_lists->resize(priv->next_thread_id);
+--		for(uint i = oldsize;i < priv->next_thread_id;i++)
+--			new (&(*thrd_lists)[i]) action_list_t();
+-+	#if !defined(OPTIMIZED_IMPL)
+-+		/* Need to ensure thrd_lists is big enough because we have not added the curr actions yet.  */
+-+		if ((int)thrd_lists->size() <= tid) {
+-+			uint oldsize = thrd_lists->size();
+-+			thrd_lists->resize(priv->next_thread_id);
+-+			for(uint i = oldsize;i < priv->next_thread_id;i++)
+-+				new (&(*thrd_lists)[i]) action_list_t();
+-+
+-+			fixup_action_list(thrd_lists);
+-+		}
+-+	#endif
+- 
+--		fixup_action_list(thrd_lists);
+--	}
+- 
+- 	ModelAction *prev_same_thread = NULL;
+- 	/* Iterate over all threads */
+- 	for (unsigned int i = 0;i < thrd_lists->size();i++, tid = (((unsigned int)(tid+1)) == thrd_lists->size()) ? 0 : tid + 1) {
+- 		/* Last SC fence in thread tid */
+--		ModelAction *last_sc_fence_thread_local = NULL;
+--		if (i != 0)
+--			last_sc_fence_thread_local = get_last_seq_cst_fence(int_to_id(tid), NULL);
+-+		// ModelAction *last_sc_fence_thread_local = NULL;
+-+		// if (i != 0)
+-+		// 	last_sc_fence_thread_local = get_last_seq_cst_fence(int_to_id(tid), NULL);
+- 
+--		/* Last SC fence in thread tid, before last SC fence in current thread */
+--		ModelAction *last_sc_fence_thread_before = NULL;
+--		if (last_sc_fence_local)
+--			last_sc_fence_thread_before = get_last_seq_cst_fence(int_to_id(tid), last_sc_fence_local);
+-+		// /* Last SC fence in thread tid, before last SC fence in current thread */
+-+		// ModelAction *last_sc_fence_thread_before = NULL;
+-+		// if (last_sc_fence_local)
+-+		// 	last_sc_fence_thread_before = get_last_seq_cst_fence(int_to_id(tid), last_sc_fence_local);
+- 
+- 		//Only need to iterate if either hb has changed for thread in question or SC fence after last operation...
+--		if (prev_same_thread != NULL &&
+--				(prev_same_thread->get_cv()->getClock(tid) == curr->get_cv()->getClock(tid)) &&
+--				(last_sc_fence_thread_local == NULL || *last_sc_fence_thread_local < *prev_same_thread)) {
+-+		 if (prev_same_thread != NULL && (prev_same_thread->get_cv()->getClock(tid) == curr->get_cv()->getClock(tid))) { //&&
+-+		// 		(last_sc_fence_thread_local == NULL || *last_sc_fence_thread_local < *prev_same_thread)) {
+- 			continue;
+-+		// }
+- 		}
+- 
+- 		/* Iterate over actions in thread, starting from most recent */
+- 		action_list_t *list = &(*thrd_lists)[tid];
+- 		sllnode<ModelAction *> * rit;
+-+		int r_mod_iter_count = 0;
+- 		for (rit = list->end();rit != NULL;rit=rit->getPrev()) {
+-+			r_mod_iter_count++;
+- 			ModelAction *act = rit->getVal();
+- 
+- 			/* Skip curr */
+-@@ -970,32 +1491,32 @@ bool ModelExecution::r_modification_order(ModelAction *curr, const ModelAction *
+- 					continue;
+- 			}
+- 
+--			if (act->is_write()) {
+--				/* C++, Section 29.3 statement 5 */
+--				if (curr->is_seqcst() && last_sc_fence_thread_local &&
+--						*act < *last_sc_fence_thread_local) {
+--					if (mo_graph->checkReachable(rf, act))
+--						return false;
+--					priorset->push_back(act);
+--					break;
+--				}
+--				/* C++, Section 29.3 statement 4 */
+--				else if (act->is_seqcst() && last_sc_fence_local &&
+--								 *act < *last_sc_fence_local) {
+--					if (mo_graph->checkReachable(rf, act))
+--						return false;
+--					priorset->push_back(act);
+--					break;
+--				}
+--				/* C++, Section 29.3 statement 6 */
+--				else if (last_sc_fence_thread_before &&
+--								 *act < *last_sc_fence_thread_before) {
+--					if (mo_graph->checkReachable(rf, act))
+--						return false;
+--					priorset->push_back(act);
+--					break;
+--				}
+--			}
+-+			// if (act->is_write()) {
+-+			// 	/* C++, Section 29.3 statement 5 */
+-+			// 	if (curr->is_seqcst() && last_sc_fence_thread_local &&
+-+			// 			*act < *last_sc_fence_thread_local) {
+-+			// 		if (mo_graph->checkReachable(rf, act))
+-+			// 			return false;
+-+			// 		priorset->push_back(act);
+-+			// 		break;
+-+			// 	}
+-+			// 	/* C++, Section 29.3 statement 4 */
+-+			// 	else if (act->is_seqcst() && last_sc_fence_local &&
+-+			// 					 *act < *last_sc_fence_local) {
+-+			// 		if (mo_graph->checkReachable(rf, act))
+-+			// 			return false;
+-+			// 		priorset->push_back(act);
+-+			// 		break;
+-+			// 	}
+-+			// 	/* C++, Section 29.3 statement 6 */
+-+			// 	else if (last_sc_fence_thread_before &&
+-+			// 					 *act < *last_sc_fence_thread_before) {
+-+			// 		if (mo_graph->checkReachable(rf, act))
+-+			// 			return false;
+-+			// 		priorset->push_back(act);
+-+			// 		break;
+-+			// 	}
+-+			// }
+- 
+- 			/*
+- 			 * Include at most one act per-thread that "happens
+-@@ -1003,20 +1524,24 @@ bool ModelExecution::r_modification_order(ModelAction *curr, const ModelAction *
+- 			 */
+- 			if (act->happens_before(curr)) {
+- 				if (i==0) {
+--					if (last_sc_fence_local == NULL ||
+--							(*last_sc_fence_local < *act)) {
+-+					//if (last_sc_fence_local == NULL ||
+-+					//		(*last_sc_fence_local < *act)) {
+- 						prev_same_thread = act;
+--					}
+-+					//}
+- 				}
+- 				if (act->is_write()) {
+--					if (mo_graph->checkReachable(rf, act))
+-+					if (mo_graph->checkReachable(rf, act)) {
+- 						return false;
+-+					}
+-+
+- 					priorset->push_back(act);
+- 				} else {
+- 					ModelAction *prevrf = act->get_reads_from();
+- 					if (!prevrf->equals(rf)) {
+--						if (mo_graph->checkReachable(rf, prevrf))
+-+						if (mo_graph->checkReachable(rf, prevrf)) {
+- 							return false;
+-+						}
+-+
+- 						priorset->push_back(prevrf);
+- 					} else {
+- 						if (act->get_tid() == curr->get_tid()) {
+-@@ -1064,26 +1589,26 @@ void ModelExecution::w_modification_order(ModelAction *curr)
+- 
+- 	SnapList<ModelAction *> edgeset;
+- 
+--	if (curr->is_seqcst()) {
+--		/* We have to at least see the last sequentially consistent write,
+--		         so we are initialized. */
+--		ModelAction *last_seq_cst = get_last_seq_cst_write(curr);
+--		if (last_seq_cst != NULL) {
+--			edgeset.push_back(last_seq_cst);
+--		}
+--		//update map for next query
+--		obj_last_sc_map.put(curr->get_location(), curr);
+--	}
+-+	// if (curr->is_seqcst()) {
+-+	// 	/* We have to at least see the last sequentially consistent write,
+-+	// 	         so we are initialized. */
+-+	// 	ModelAction *last_seq_cst = get_last_seq_cst_write(curr);
+-+	// 	if (last_seq_cst != NULL) {
+-+	// 		edgeset.push_back(last_seq_cst);
+-+	// 	}
+-+	// 	//update map for next query
+-+	// 	obj_last_sc_map.put(curr->get_location(), curr);
+-+	// }
+- 
+- 	/* Last SC fence in the current thread */
+--	ModelAction *last_sc_fence_local = get_last_seq_cst_fence(curr->get_tid(), NULL);
+-+	//ModelAction *last_sc_fence_local = get_last_seq_cst_fence(curr->get_tid(), NULL);
+- 
+- 	/* Iterate over all threads */
+- 	for (i = 0;i < thrd_lists->size();i++) {
+- 		/* Last SC fence in thread i, before last SC fence in current thread */
+--		ModelAction *last_sc_fence_thread_before = NULL;
+--		if (last_sc_fence_local && int_to_id((int)i) != curr->get_tid())
+--			last_sc_fence_thread_before = get_last_seq_cst_fence(int_to_id(i), last_sc_fence_local);
+-+		//ModelAction *last_sc_fence_thread_before = NULL;
+-+		//if (last_sc_fence_local && int_to_id((int)i) != curr->get_tid())
+-+		//	last_sc_fence_thread_before = get_last_seq_cst_fence(int_to_id(i), last_sc_fence_local);
+- 
+- 		/* Iterate over actions in thread, starting from most recent */
+- 		action_list_t *list = &(*thrd_lists)[i];
+-@@ -1112,11 +1637,11 @@ void ModelExecution::w_modification_order(ModelAction *curr)
+- 			}
+- 
+- 			/* C++, Section 29.3 statement 7 */
+--			if (last_sc_fence_thread_before && act->is_write() &&
+--					*act < *last_sc_fence_thread_before) {
+--				edgeset.push_back(act);
+--				break;
+--			}
+-+			// if (last_sc_fence_thread_before && act->is_write() &&
+-+			// 		*act < *last_sc_fence_thread_before) {
+-+			// 	edgeset.push_back(act);
+-+			// 	break;
+-+			// }
+- 
+- 			/*
+- 			 * Include at most one act per-thread that "happens
+-@@ -1453,6 +1978,9 @@ bool valequals(uint64_t val1, uint64_t val2, int size) {
+-  */
+- SnapVector<ModelAction *> *  ModelExecution::build_may_read_from(ModelAction *curr)
+- {
+-+	#ifdef TIME_IT
+-+		clock_t start = clock();
+-+	#endif
+- 	SnapVector<simple_action_list_t> *thrd_lists = obj_wr_thrd_map.get(curr->get_location());
+- 	unsigned int i;
+- 	ASSERT(curr->is_read());
+-@@ -1466,13 +1994,17 @@ SnapVector<ModelAction *> *  ModelExecution::build_may_read_from(ModelAction *cu
+- 
+- 	/* Iterate over all threads */
+- 	if (thrd_lists != NULL)
+-+
+- 		for (i = 0;i < thrd_lists->size();i++) {
+- 			/* Iterate over actions in thread, starting from most recent */
+- 			simple_action_list_t *list = &(*thrd_lists)[i];
+- 			sllnode<ModelAction *> * rit;
+-+
+- 			for (rit = list->end();rit != NULL;rit=rit->getPrev()) {
+- 				ModelAction *act = rit->getVal();
+- 
+-+				ASSERT(act->is_write());
+-+
+- 				if (act == curr)
+- 					continue;
+- 
+-@@ -1507,11 +2039,111 @@ SnapVector<ModelAction *> *  ModelExecution::build_may_read_from(ModelAction *cu
+- 			}
+- 		}
+- 
+--	if (DBG_ENABLED()) {
+--		model_print("Reached read action:\n");
+--		curr->print();
+--		model_print("End printing read_from_past\n");
+-+	#ifdef TIME_IT
+-+		clock_t end = clock();
+-+		orig_time += end-start;
+-+	#endif
+-+	return rf_set;
+-+}
+-+
+-+/**
+-+ * Build up an initial set of all past writes that this 'read' action may read
+-+ * from, as well as any previously-observed future values that must still be valid.
+-+ *
+-+ * @param curr is the current ModelAction that we are exploring; it must be a
+-+ * 'read' operation.
+-+ */
+-+SnapVector<ModelAction *> *  ModelExecution::build_may_read_from_opt(ModelAction *curr)
+-+{
+-+	#ifdef TIME_IT
+-+		clock_t start = clock();
+-+	#endif
+-+	#if defined(OPTIMIZED_IMPL)
+-+		hb_writes = new SnapVector<ModelAction *>(thread_map.size());
+-+	#endif
+-+
+-+	SnapVector<simple_action_list_t> *thrd_lists = obj_wr_thrd_map.get(curr->get_location());
+-+	ASSERT(curr->is_read());
+-+
+-+	ModelAction *last_sc_write = NULL;
+-+
+-+	if (curr->is_seqcst())
+-+		last_sc_write = get_last_seq_cst_write(curr);
+-+
+-+	SnapVector<ModelAction *> * rf_set = new SnapVector<ModelAction *>();
+-+	int tid;
+-+	unsigned int i;
+-+
+-+	ModelAction * prev_same_thread = get_last_event_thr_obj(curr->get_tid(), curr->get_location());
+-+	if (prev_same_thread != NULL) {
+-+		if (prev_same_thread->is_write())
+-+			prev_same_thread = NULL;
+-+		else
+-+			prev_same_thread = prev_same_thread->get_reads_from();
+- 	}
+-+
+-+	/* Iterate over all threads */
+-+	if (thrd_lists != NULL) {
+-+		tid = curr->get_tid() < thrd_lists->size() ? curr->get_tid() : 0;
+-+
+-+	    for (i = 0;i < thrd_lists->size();i++, tid = (((unsigned int)(tid+1)) == thrd_lists->size()) ? 0 : tid + 1) {
+-+			/* Iterate over actions in thread, starting from most recent */
+-+			simple_action_list_t *list = &(*thrd_lists)[tid];
+-+
+-+			sllnode<ModelAction *> * rit;
+-+
+-+			int iter_count = 0;
+-+			for (rit = list->end();rit != NULL;rit=rit->getPrev()) {
+-+				iter_count++;
+-+				ModelAction *act = rit->getVal();
+-+
+-+				ASSERT(act->is_write());
+-+
+-+				if (act == curr)
+-+					continue;
+-+
+-+				/* Don't consider more than one seq_cst write if we are a seq_cst read. */
+-+				bool allow_read = true;
+-+
+-+				if (curr->is_seqcst() && (act->is_seqcst() || (last_sc_write != NULL && act->happens_before(last_sc_write))) && act != last_sc_write)
+-+					allow_read = false;
+-+
+-+				/* Need to check whether we will have two RMW reading from the same value */
+-+				if (curr->is_rmwr()) {
+-+					/* It is okay if we have a failing CAS */
+-+					if (!curr->is_rmwrcas() ||
+-+							valequals(curr->get_value(), act->get_value(), curr->getSize())) {
+-+						//Need to make sure we aren't the second RMW
+-+						if (!act->get_is_tail()) {
+-+							//we are the second RMW
+-+							allow_read = false;
+-+						}
+-+					}
+-+				}
+-+
+-+				if (allow_read) {
+-+					/* Only add feasible reads */
+-+					rf_set->push_back(act);
+-+				}
+-+
+-+				/* Include at most one act per-thread that "happens before" curr */
+-+				if (act->happens_before(curr)) {
+-+					if (prev_same_thread != NULL &&
+-+						act->get_seq_number() <= prev_same_thread->get_cv()->getClock(act->get_tid()) &&
+-+						act->get_hbmo()->last_rf_seq_nr <= prev_same_thread->get_seq_number()) {
+-+						break;
+-+					}
+-+					hb_writes->push_back(act);
+-+					break;
+-+				}
+-+			}
+-+		}
+-+	}
+-+
+-+	#ifdef TIME_IT
+-+		clock_t end = clock();
+-+		opt_time += end-start;
+-+	#endif
+- 	return rf_set;
+- }
+- 
+-diff --git a/./execution.h b/../c11tester_evaluation/c11tester/execution.h
+-index 5e80e18..01a5c98 100644
+---- a/./execution.h
+-+++ b/../c11tester_evaluation/c11tester/execution.h
+-@@ -18,6 +18,8 @@
+- #include "mutex.h"
+- #include <condition_variable>
+- #include "classlist.h"
+-+#include <unordered_map>
+-+#include <vector>
+- 
+- #define INITIAL_THREAD_ID	0
+- #define MAIN_THREAD_ID		1
+-@@ -96,6 +98,17 @@ public:
+- 	void restore_last_seq_num();
+- 	void collectActions();
+- 	modelclock_t get_curr_seq_num();
+-+
+-+
+-+	/**
+-+	 * New additions.
+-+	 *
+-+	 */
+-+	uint get_num_memory_locations() { return obj_wr_thrd_map.size; }
+-+	void po_propagate_hbmo(ModelAction *act, int read_seq_nr);
+-+	void po_propagate_hbmo(ModelAction *act, int tid, int clock, int read_seq_nr);
+-+	long long get_orig_time() { return orig_time; }
+-+	long long get_opt_time() { return opt_time; }
+- #ifdef TLS
+- 	pthread_key_t getPthreadKey() {return pthreadkey;}
+- #endif
+-@@ -209,6 +222,29 @@ private:
+- 	Thread * action_select_next_thread(const ModelAction *curr) const;
+- 
+- 	bool isfinished;
+-+
+-+
+-+	/**
+-+	 * New additions.
+-+	 *
+-+	 */
+-+	void process_write_opt(ModelAction *curr, ModelAction *prevWrite, 
+\ No newline at end of file
+diff --git a/./model.cc b/../c11tester_evaluation/c11tester/model.cc
+index f733770..ff35ad9 100644
+--- a/./model.cc
++++ b/../c11tester_evaluation/c11tester/model.cc
+@@ -4,6 +4,7 @@
+ #include <stdarg.h>
+ #include <string.h>
+ #include <cstdlib>
++#include <ctime>
+ 
+ #include "model.h"
+ #include "action.h"
+@@ -19,6 +20,9 @@
+ #include "bugmessage.h"
+ #include "params.h"
+ #include "plugins.h"
++#include "datarace.h"
++#include "cyclegraph.h"
++
+ 
+ ModelChecker *model = NULL;
+ int inside_model = 0;
+@@ -77,7 +81,9 @@ ModelChecker::ModelChecker() :
+ 	execution_number(1),
+ 	curr_thread_num(MAIN_THREAD_ID),
+ 	trace_analyses(),
+-	inspect_plugin(NULL)
++	inspect_plugin(NULL),
++	start_time(clock()),
++	end_time(clock())
+ {
+ 	model_print("C11Tester\n"
+ 							"Copyright (c) 2013 and 2019 Regents of the University of California. All rights reserved.\n"
+@@ -257,6 +263,17 @@ void ModelChecker::print_stats() const
+ 	model_print("Number of complete, bug-free executions: %d\n", stats.num_complete);
+ 	model_print("Number of buggy executions: %d\n", stats.num_buggy_executions);
+ 	model_print("Total executions: %d\n", stats.num_total);
++
++	print_atomic_accesses();
++
++	model_print("num threads: %d\n", get_num_threads()-1);
++	model_print("num locations: %d\n", execution->get_num_memory_locations());
++
++	double orig_time = execution->get_orig_time() / (double) CLOCKS_PER_SEC;
++	double opt_time = execution->get_opt_time() / (double) CLOCKS_PER_SEC;
++	model_print("orig total time: %.2fs\n", orig_time);
++	model_print("opt total time: %.2fs\n", opt_time);
++	model_print("orig/opt: %.2f\n", orig_time/opt_time);
+ }
+ 
+ /**
+@@ -280,7 +297,6 @@ void ModelChecker::print_execution(bool printbugs) const
+ 	}
+ 
+ 	model_print("\n");
+-	execution->print_summary();
+ }
+ 
+ /**
+@@ -292,6 +308,11 @@ void ModelChecker::print_execution(bool printbugs) const
+  */
+ void ModelChecker::finish_execution(bool more_executions)
+ {
++	end_time = clock();
++	long long total_time = end_time-start_time;
++	model_print("finished execution: %d\n", execution_number);
++	model_print("execution %d total-time: %.2fs\n", execution_number, total_time / (double) CLOCKS_PER_SEC);
++
+ 	DBG();
+ 	/* Is this execution a feasible execution that's worth bug-checking? */
+ 	bool complete = (execution->is_complete_execution() ||
+@@ -307,16 +328,18 @@ void ModelChecker::finish_execution(bool more_executions)
+ 
+ 	record_stats();
+ 	/* Output */
+-	if ( (complete && params.verbose) || params.verbose>1 || (complete && execution->have_bug_reports()))
++	if ( (complete && params.verbose) || params.verbose>1 || (params.verbose>1 && complete && execution->have_bug_reports()))
+ 		print_execution(complete);
+ 	else
+ 		clear_program_output();
+ 
+-	execution_number ++;
++	execution_number++;
+ 	history->set_new_exec_flag();
+ 
+-	if (more_executions)
++	if (more_executions) {
++		print_stats();
+ 		reset_to_initial_state();
++	}
+ }
+ 
+ /** @brief Run trace analyses on complete trace */
+@@ -529,6 +552,9 @@ void ModelChecker::startChecker() {
+ 
+ 	snapshot = take_snapshot();
+ 
++	model_print("starting execution: %d\n", execution_number);
++	start_time = clock();
++
+ 	//reset random number generator state
+ 	setstate(random_state);
+ 
+diff --git a/./model.h b/../c11tester_evaluation/c11tester/model.h
+index 9e52f53..332213b 100644
+--- a/./model.h
++++ b/../c11tester_evaluation/c11tester/model.h
+@@ -107,6 +107,9 @@ private:
+ 	void print_bugs() const;
+ 	void print_execution(bool printbugs) const;
+ 	void print_stats() const;
++
++	clock_t start_time;
++	clock_t end_time;
+ };
+ 
+ extern int inside_model;
