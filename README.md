@@ -3,14 +3,18 @@
     This repository consists of the final project for Advanced topics in programming language theory which consists of verifying the consistency of programs in the C11 tester for the Strengthened Release-Acquire memory model. 
 
 ## Project structure:
+
     The Project structure consists of a c11 tester and a diff file, the project repository is to have a docker file but has been removed due to GitHub limits.
 
 ### C11 tester:
+
     The C11 tester has been modified and contains a test directory where the example programs are located and can be run from the test directory. 
-    The program has a complied code using Clang and clang++
+    The program has a complied code using Clang and Clang++
 
 ### Steps to run the example code:
+
     The C code can be run using the below commands.
+    
 ```pycon
 ./run.sh /test/<testfile> [options]
 ```
